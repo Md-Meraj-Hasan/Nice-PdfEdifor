@@ -18,11 +18,19 @@ import { saveAs } from 'file-saver';
 
 interface OcrToolProps {
   document: PdfDocument;
+  initialPage?: number;
 }
 
-export const OcrTool: React.FC<OcrToolProps> = ({ document }) => {
+export const OcrTool: React.FC<OcrToolProps> = ({ document, initialPage = 1 }) => {
   const [targetScope, setTargetScope] = useState<'current' | 'all' | 'custom'>('current');
-  const [customPage, setCustomPage] = useState<number>(1);
+  const [customPage, setCustomPage] = useState<number>(initialPage);
+
+  React.useEffect(() => {
+    if (initialPage && initialPage >= 1 && initialPage <= document.pageCount) {
+      setCustomPage(initialPage);
+      setTargetScope('current');
+    }
+  }, [initialPage, document.pageCount]);
   const [language, setLanguage] = useState<string>('eng');
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [progress, setProgress] = useState<OcrProgress | null>(null);

@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
-import { Header } from './components/Header';
-import { ToolNav } from './components/ToolNav';
+import { UnifiedTopBar } from './components/UnifiedTopBar';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { FileUploader } from './components/FileUploader';
 import { OrganizeTool } from './components/tools/OrganizeTool';
 import { MergeTool } from './components/tools/MergeTool';
@@ -19,18 +19,23 @@ import { EditTool } from './components/tools/EditTool';
 import { OcrTool } from './components/tools/OcrTool';
 import { SecurityTool } from './components/tools/SecurityTool';
 import { ApkBuilderTool } from './components/tools/ApkBuilderTool';
-import { PageClipboard, PdfDocument, ToolId } from './types/pdf';
-import { generateAllThumbnails } from './services/pdfRenderer';
+import { PageClipboard, PageThumbnail, PdfDocument, ToolId } from './types/pdf';
+import { generateAllThumbnails, updateSpecificThumbnails } from './services/pdfRenderer';
 import { checkPdfEncryption, decryptPdfDocument } from './services/pdfEngine';
 import { CheckCircle2, ShieldCheck, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function App() {
   const [document, setDocument] = useState<PdfDocument | null>(null);
   const [activeTool, setActiveTool] = useState<ToolId>('organize');
+  const [targetPageForTool, setTargetPageForTool] = useState<number>(1);
   const [clipboard, setClipboard] = useState<PageClipboard | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processStatus, setProcessStatus] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Undo / Redo history stack
+  const [history, setHistory] = useState<Uint8Array[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
 
   // Protected PDF unlock modal state
   const [pendingProtectedFile, setPendingProtectedFile] = useState<{
@@ -90,10 +95,15 @@ export default function App() {
 
       setDocument(newDoc);
       setActiveTool('organize');
+      setTargetPageForTool(1);
+
+      // Initialize undo/redo history
+      setHistory([bytes]);
+      setHistoryIndex(0);
+
       showToast(`Loaded ${fileName} (${pageCount} pages)`);
     } catch (err: any) {
       console.error('Failed to load PDF:', err);
-      // If error indicates encryption, offer password prompt
       if (err.message && (err.message.includes('encrypted') || err.message.includes('password'))) {
         setPendingProtectedFile({ bytes, fileName });
         setPromptPassword('');
@@ -125,7 +135,6 @@ export default function App() {
       setPendingProtectedFile(null);
       setPromptPassword('');
 
-      // Now load the clean decrypted bytes
       await handleLoadDocument(decryptedBytes, pendingProtectedFile.fileName);
       showToast('PDF unlocked and password protection removed successfully!');
     } catch (err: any) {
@@ -139,16 +148,35 @@ export default function App() {
 
   /**
    * Update the current document after an operation (e.g. crop, rotate, reorder, edit)
+   * Supports instant 0ms updates and fast differential thumbnail updates without full reload.
    */
-  const handleUpdateDocumentBytes = async (newBytes: Uint8Array, message?: string) => {
+  const handleUpdateDocumentBytes = async (
+    newBytes: Uint8Array,
+    message?: string,
+    skipHistoryPush = false,
+    changedPageNumbers?: number[],
+    updatedThumbnailsDirect?: PageThumbnail[]
+  ) => {
     try {
-      setIsProcessing(true);
-      setProcessStatus('Updating document & previews...');
+      const isQuickUpdate = !!updatedThumbnailsDirect || (changedPageNumbers && changedPageNumbers.length > 0);
+      if (!isQuickUpdate) {
+        setIsProcessing(true);
+        setProcessStatus('Updating document & previews...');
+      }
 
-      const pdfLibDoc = await PDFDocument.load(newBytes);
+      const pdfLibDoc = await PDFDocument.load(newBytes, { ignoreEncryption: true });
       const pageCount = pdfLibDoc.getPageCount();
 
-      const thumbnails = await generateAllThumbnails(newBytes, 260);
+      let thumbnails: PageThumbnail[];
+      if (updatedThumbnailsDirect) {
+        // Instant 0ms update: reorder, cut, copy, duplicate
+        thumbnails = updatedThumbnailsDirect;
+      } else if (changedPageNumbers && changedPageNumbers.length > 0 && document?.thumbnails) {
+        // Fast incremental ~50ms update: only re-render the modified page(s)
+        thumbnails = await updateSpecificThumbnails(document.thumbnails, newBytes, changedPageNumbers);
+      } else {
+        thumbnails = await generateAllThumbnails(newBytes, 260);
+      }
 
       setDocument(prev => {
         if (!prev) return null;
@@ -161,6 +189,13 @@ export default function App() {
         };
       });
 
+      if (!skipHistoryPush) {
+        const nextHistory = history.slice(0, historyIndex + 1);
+        nextHistory.push(newBytes);
+        setHistory(nextHistory);
+        setHistoryIndex(nextHistory.length - 1);
+      }
+
       if (message) showToast(message);
     } catch (err) {
       console.error('Failed to update PDF document:', err);
@@ -170,6 +205,52 @@ export default function App() {
       setProcessStatus('');
     }
   };
+
+  /**
+   * Undo last operation
+   */
+  const handleUndo = useCallback(async () => {
+    if (historyIndex > 0) {
+      const prevIdx = historyIndex - 1;
+      const prevBytes = history[prevIdx];
+      setHistoryIndex(prevIdx);
+      await handleUpdateDocumentBytes(prevBytes, 'Undo applied', true);
+    }
+  }, [history, historyIndex]);
+
+  /**
+   * Redo last operation
+   */
+  const handleRedo = useCallback(async () => {
+    if (historyIndex < history.length - 1) {
+      const nextIdx = historyIndex + 1;
+      const nextBytes = history[nextIdx];
+      setHistoryIndex(nextIdx);
+      await handleUpdateDocumentBytes(nextBytes, 'Redo applied', true);
+    }
+  }, [history, historyIndex]);
+
+  // Global Keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y or Ctrl+Shift+Z)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
   /**
    * Export / Download the active PDF file
@@ -185,39 +266,48 @@ export default function App() {
     if (confirm('Do you want to close the current PDF and open a new one?')) {
       setDocument(null);
       setClipboard(null);
+      setHistory([]);
+      setHistoryIndex(-1);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-      {/* Top Header */}
-      <Header
+    <div
+      className={`bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white ${
+        document
+          ? 'min-h-screen pb-16 md:pb-0 overflow-y-auto'
+          : 'h-screen overflow-hidden'
+      }`}
+    >
+      {/* Unified Single-Line Top Bar with All Section Dropdowns & Brand */}
+      <UnifiedTopBar
         fileName={document?.name || null}
-        fileSize={document?.size || null}
         pageCount={document?.pageCount || 0}
         activeTool={activeTool}
         setActiveTool={setActiveTool}
         onNewFile={handleNewFile}
         onDownloadCurrentPdf={handleDownloadCurrentPdf}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex < history.length - 1}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        clipboardCount={clipboard?.pages.length || 0}
       />
 
       {/* Main Content Area */}
       {document ? (
         <>
-          {/* Tool Navigation Bar */}
-          <ToolNav
-            activeTool={activeTool}
-            setActiveTool={setActiveTool}
-            clipboardCount={clipboard?.pages.length || 0}
-          />
-
-          <main className="flex-1 p-3 sm:p-6 max-w-7xl w-full mx-auto">
+          <main className="flex-1 p-2.5 sm:p-6 max-w-7xl w-full mx-auto">
             {activeTool === 'organize' && (
               <OrganizeTool
                 document={document}
                 clipboard={clipboard}
                 setClipboard={setClipboard}
                 onUpdateDocumentBytes={handleUpdateDocumentBytes}
+                onNavigateToTool={(tool, pageNum) => {
+                  if (pageNum) setTargetPageForTool(pageNum);
+                  setActiveTool(tool);
+                }}
               />
             )}
 
@@ -228,11 +318,17 @@ export default function App() {
               />
             )}
 
-            {activeTool === 'split' && <SplitTool document={document} />}
+            {activeTool === 'split' && (
+              <SplitTool
+                document={document}
+                onOpenSplitDoc={handleLoadDocument}
+              />
+            )}
 
             {activeTool === 'crop' && (
               <CropTool
                 document={document}
+                initialPage={targetPageForTool}
                 onUpdateDocumentBytes={handleUpdateDocumentBytes}
               />
             )}
@@ -254,11 +350,17 @@ export default function App() {
             {activeTool === 'edit' && (
               <EditTool
                 document={document}
+                initialPage={targetPageForTool}
                 onUpdateDocumentBytes={handleUpdateDocumentBytes}
               />
             )}
 
-            {activeTool === 'ocr' && <OcrTool document={document} />}
+            {activeTool === 'ocr' && (
+              <OcrTool
+                document={document}
+                initialPage={targetPageForTool}
+              />
+            )}
 
             {activeTool === 'security' && (
               <SecurityTool
@@ -269,11 +371,18 @@ export default function App() {
 
             {activeTool === 'apk-builder' && <ApkBuilderTool />}
           </main>
+
+          {/* Native Smartphone Bottom Navigation Bar */}
+          <MobileBottomNav
+            activeTool={activeTool}
+            setActiveTool={setActiveTool}
+            clipboardCount={clipboard?.pages.length || 0}
+          />
         </>
       ) : (
-        <main className="flex-1 flex flex-col justify-center">
+        <main className="flex-1 flex flex-col justify-center overflow-hidden">
           {activeTool === 'apk-builder' ? (
-            <div className="max-w-4xl mx-auto p-4 w-full">
+            <div className="max-w-4xl mx-auto p-4 w-full h-full overflow-y-auto">
               <button
                 onClick={() => setActiveTool('organize')}
                 className="mb-4 text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1"
@@ -385,7 +494,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-800 border border-slate-700 text-white shadow-2xl text-xs font-semibold animate-in fade-in slide-in-from-bottom-2">
+        <div className="fixed bottom-20 md:bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-800 border border-slate-700 text-white shadow-2xl text-xs font-semibold animate-in fade-in slide-in-from-bottom-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>

@@ -12,7 +12,13 @@ import { rotatePdfPages, parsePageRange } from '../../services/pdfEngine';
 
 interface RotateToolProps {
   document: PdfDocument;
-  onUpdateDocumentBytes: (bytes: Uint8Array, message?: string) => Promise<void>;
+  onUpdateDocumentBytes: (
+    bytes: Uint8Array,
+    message?: string,
+    skipHistoryPush?: boolean,
+    changedPageNumbers?: number[],
+    updatedThumbnailsDirect?: any[]
+  ) => Promise<void>;
 }
 
 export const RotateTool: React.FC<RotateToolProps> = ({
@@ -34,7 +40,8 @@ export const RotateTool: React.FC<RotateToolProps> = ({
         condition,
         selectedIndices
       );
-      await onUpdateDocumentBytes(newBytes, `Rotated pages by ${targetAngle}°`);
+      const changedPageNums = condition === 'selected' ? selectedIndices.map(i => i + 1) : undefined;
+      await onUpdateDocumentBytes(newBytes, `Rotated pages by ${targetAngle}°`, false, changedPageNums);
     } catch (err) {
       console.error(err);
       alert('Failed to rotate PDF pages');

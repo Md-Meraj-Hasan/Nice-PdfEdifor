@@ -13,17 +13,33 @@ import {
   FileDown,
   Layers,
   Sparkles,
-  Undo2,
+  Maximize2,
+  X,
+  RotateCw,
+  RotateCcw,
+  Type,
+  ScanText,
+  Crop,
+  Eye,
 } from 'lucide-react';
-import { PageClipboard, PageThumbnail, PdfDocument } from '../../types/pdf';
-import { reorderPdfPages } from '../../services/pdfEngine';
+import { PageClipboard, PageThumbnail, PdfDocument, ToolId } from '../../types/pdf';
+import { reorderPdfPages, rotatePdfPages } from '../../services/pdfEngine';
+import { SelectionActionBar } from '../SelectionActionBar';
+import { ZoomableContainer } from '../ZoomableContainer';
 import { saveAs } from 'file-saver';
 
 interface OrganizeToolProps {
   document: PdfDocument;
   clipboard: PageClipboard | null;
   setClipboard: (clip: PageClipboard | null) => void;
-  onUpdateDocumentBytes: (newBytes: Uint8Array, message?: string) => Promise<void>;
+  onUpdateDocumentBytes: (
+    newBytes: Uint8Array,
+    message?: string,
+    skipHistoryPush?: boolean,
+    changedPageNumbers?: number[],
+    updatedThumbnailsDirect?: PageThumbnail[]
+  ) => Promise<void>;
+  onNavigateToTool?: (tool: ToolId, pageNumber?: number) => void;
 }
 
 export const OrganizeTool: React.FC<OrganizeToolProps> = ({
@@ -31,8 +47,9 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
   clipboard,
   setClipboard,
   onUpdateDocumentBytes,
+  onNavigateToTool,
 }) => {
-  // Page items represent the current order: { originalIndex: 0-based, pageNumber: 1-based, id }
+  // Page items represent the current order: { originalIndex: 0-based, id }
   const [pages, setPages] = useState<Array<{ originalIndex: number; id: string }>>(() =>
     Array.from({ length: document.pageCount }, (_, i) => ({
       originalIndex: i,
@@ -42,6 +59,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
 
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [isApplying, setIsApplying] = useState(false);
+  const [zoomModalPage, setZoomModalPage] = useState<number | null>(null);
 
   // Sync if pageCount changes
   React.useEffect(() => {
@@ -173,13 +191,69 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
     }
   };
 
-  // Save changes to PDF
+  // Rotate selected pages directly with fast incremental reload
+  const handleRotateSelected = async (targetAngle: number) => {
+    if (selectedIndices.size === 0) return;
+    try {
+      setIsApplying(true);
+      const originalSelected = Array.from(selectedIndices).map(idx => pages[idx].originalIndex);
+      const newBytes = await rotatePdfPages(
+        document.bytes,
+        targetAngle,
+        'selected',
+        originalSelected
+      );
+      // Pass only the changed page numbers so other pages are not reloaded!
+      const changedPageNums = originalSelected.map(i => i + 1);
+      await onUpdateDocumentBytes(
+        newBytes,
+        `Rotated ${originalSelected.length} page(s) by ${targetAngle}°`,
+        false,
+        changedPageNums
+      );
+    } catch (err) {
+      console.error(err);
+      alert('Failed to rotate pages');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  // Duplicate selected pages in batch
+  const handleDuplicateSelected = () => {
+    if (selectedIndices.size === 0) return;
+    const sorted = Array.from(selectedIndices).sort((a, b) => b - a);
+    const next = [...pages];
+    for (const idx of sorted) {
+      next.splice(idx + 1, 0, {
+        originalIndex: pages[idx].originalIndex,
+        id: `dup-${Date.now()}-${Math.random()}`,
+      });
+    }
+    setPages(next);
+    setSelectedIndices(new Set());
+  };
+
+  // Save changes to PDF with instant 0ms thumbnail update
   const handleApplyOrder = async () => {
     try {
       setIsApplying(true);
       const order = pages.map(p => p.originalIndex);
       const newBytes = await reorderPdfPages(document.bytes, order);
-      await onUpdateDocumentBytes(newBytes, 'Pages reordered successfully');
+
+      // Instantly reuse existing thumbnails mapped to new order
+      const directThumbnails = order.map((originalIdx, newIdx) => ({
+        ...document.thumbnails[originalIdx],
+        pageNumber: newIdx + 1,
+      }));
+
+      await onUpdateDocumentBytes(
+        newBytes,
+        'Pages reordered successfully',
+        false,
+        undefined,
+        directThumbnails
+      );
     } catch (err) {
       console.error(err);
       alert('Failed to update PDF pages');
@@ -209,99 +283,68 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Action Toolbar */}
-      <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
-        {/* Left: Selection and Batch controls */}
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-4 pb-28 md:pb-12">
+      {/* Single-Line Top Status & Quick Bar */}
+      <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-md text-xs">
+        <div className="flex items-center gap-2 text-slate-300">
+          <span className="font-bold text-white">{pages.length} Pages</span>
+          <span className="text-slate-400 hidden sm:inline">• Tap any page to select & apply tools below</span>
+        </div>
+
+        <div className="flex items-center gap-2">
           <button
             onClick={selectAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700/70 hover:bg-slate-600 text-slate-200 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-700/80 hover:bg-slate-600 text-slate-200 transition"
           >
-            {selectedIndices.size === pages.length ? (
-              <CheckSquare className="w-4 h-4 text-blue-400" />
-            ) : (
-              <Square className="w-4 h-4 text-slate-400" />
-            )}
+            <CheckSquare className="w-3.5 h-3.5 text-blue-400" />
             <span>{selectedIndices.size === pages.length ? 'Deselect All' : 'Select All'}</span>
-            {selectedIndices.size > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px]">
-                {selectedIndices.size}
-              </span>
-            )}
           </button>
-
-          <button
-            onClick={handleCut}
-            disabled={selectedIndices.size === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700/70 hover:bg-slate-600 text-slate-200 disabled:opacity-40 transition"
-            title="Cut selected pages to clipboard"
-          >
-            <Scissors className="w-3.5 h-3.5 text-amber-400" />
-            Cut
-          </button>
-
-          <button
-            onClick={handleCopy}
-            disabled={selectedIndices.size === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700/70 hover:bg-slate-600 text-slate-200 disabled:opacity-40 transition"
-            title="Copy selected pages to clipboard"
-          >
-            <Copy className="w-3.5 h-3.5 text-blue-400" />
-            Copy
-          </button>
-
-          {clipboard && clipboard.pages.length > 0 && (
-            <button
-              onClick={() => handlePaste(pages.length)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/80 hover:bg-emerald-500 text-white transition animate-pulse"
-              title="Paste at the end of the document"
-            >
-              <ClipboardPaste className="w-3.5 h-3.5" />
-              Paste at End ({clipboard.pages.length})
-            </button>
-          )}
-
-          {selectedIndices.size > 0 && (
-            <>
-              <button
-                onClick={deleteSelected}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600/20 hover:bg-red-600/40 text-red-300 border border-red-500/30 transition"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete ({selectedIndices.size})
-              </button>
-
-              <button
-                onClick={handleExtractSelected}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 transition"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                Extract ({selectedIndices.size})
-              </button>
-            </>
-          )}
 
           <button
             onClick={reversePages}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-700/70 hover:bg-slate-600 text-slate-200 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-700/80 hover:bg-slate-600 text-slate-200 transition"
             title="Reverse order of all pages"
           >
             <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
-            Reverse
+            <span className="hidden sm:inline">Reverse</span>
           </button>
-        </div>
 
-        {/* Right: Apply Button */}
-        <div>
           <button
             onClick={handleApplyOrder}
             disabled={isApplying}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 active:scale-95 transition disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 active:scale-95 transition disabled:opacity-50"
           >
-            <Sparkles className="w-4 h-4" />
-            {isApplying ? 'Saving Changes...' : 'Save Page Order'}
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{isApplying ? 'Saving...' : 'Save Order'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Horizontal Page Navigation Strip (1, 2, 3, 4, 5...) */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl px-3 py-1.5 flex items-center justify-between gap-2 shadow-sm text-xs">
+        <span className="font-bold text-slate-400 shrink-0 text-[11px]">Pages:</span>
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          {pages.map((_, i) => {
+            const pNum = i + 1;
+            const isSelected = selectedIndices.has(i);
+            return (
+              <button
+                key={pNum}
+                type="button"
+                onClick={() => {
+                  toggleSelect(i);
+                }}
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl text-xs font-bold transition shrink-0 flex items-center justify-center border ${
+                  isSelected
+                    ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/40 scale-105'
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:bg-slate-700 hover:text-white'
+                }`}
+                title={`Select / Toggle Page ${pNum}`}
+              >
+                {pNum}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -311,7 +354,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           <div className="flex items-center gap-2">
             <ClipboardPaste className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>
-              <strong>Clipboard:</strong> {clipboard.pages.length} page(s) ready to paste. Click &ldquo;Paste Here&rdquo; between any pages below or at the end.
+              <strong>Clipboard:</strong> {clipboard.pages.length} page(s) ready to paste. Click &ldquo;Paste After&rdquo; on any card below or paste at end.
             </span>
           </div>
           <button
@@ -324,7 +367,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
       )}
 
       {/* Pages Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
         {pages.map((item, index) => {
           const isSelected = selectedIndices.has(index);
           const thumb = document.thumbnails[item.originalIndex];
@@ -334,7 +377,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
               key={item.id}
               className={`group relative bg-slate-800/80 rounded-2xl border transition-all flex flex-col overflow-hidden ${
                 isSelected
-                  ? 'border-blue-500 ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/10'
+                  ? 'border-blue-500 ring-2 ring-blue-500/50 shadow-xl shadow-blue-500/20 scale-[1.01]'
                   : 'border-slate-700/80 hover:border-slate-600 hover:shadow-md'
               }`}
             >
@@ -343,7 +386,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSelect(index)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white"
                 >
                   {isSelected ? (
                     <CheckSquare className="w-4 h-4 text-blue-400" />
@@ -353,21 +396,40 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
                   <span>Page {index + 1}</span>
                 </button>
 
-                <span className="text-[10px] text-slate-400">
-                  (Src #{item.originalIndex + 1})
-                </span>
+                <div className="flex items-center gap-1">
+                  {/* Quick Zoom Inspect Button */}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setZoomModalPage(item.originalIndex + 1);
+                    }}
+                    className="p-1 rounded text-slate-400 hover:text-blue-400 hover:bg-slate-750 transition"
+                    title="2-Finger Zoom & Inspect Page"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+
+                  <span className="text-[10px] text-slate-500">
+                    #{item.originalIndex + 1}
+                  </span>
+                </div>
               </div>
 
-              {/* Page Thumbnail Preview */}
+              {/* Page Thumbnail Preview (Always 100% visible, no darkening overlay) */}
               <div
                 onClick={() => toggleSelect(index)}
-                className="relative aspect-[3/4] bg-white/5 flex items-center justify-center p-2 cursor-pointer overflow-hidden"
+                className={`relative aspect-[3/4] p-1.5 cursor-pointer flex items-center justify-center transition-all bg-white/5 ${
+                  isSelected ? 'bg-blue-600/10' : ''
+                }`}
               >
                 {thumb?.dataUrl ? (
                   <img
                     src={thumb.dataUrl}
                     alt={`Page ${index + 1}`}
-                    className="max-h-full max-w-full object-contain rounded shadow-sm bg-white"
+                    className={`max-h-full max-w-full object-contain rounded shadow-sm bg-white transition-all ${
+                      isSelected ? 'ring-2 ring-blue-500 shadow-md shadow-blue-500/30' : ''
+                    }`}
                     loading="lazy"
                   />
                 ) : (
@@ -377,57 +439,70 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
                   </div>
                 )}
 
-                {/* Overlay hover actions */}
-                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      movePage(index, index - 1);
-                    }}
-                    disabled={index === 0}
-                    className="p-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-30"
-                    title="Move Left"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                  </button>
+                {/* Selected Indicator Badge (in corner, does not cover text) */}
+                {isSelected && (
+                  <div className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg border border-white/60">
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </div>
 
+              {/* Card Footer: Quick Rearrange Controls (Below thumbnail, never covers content) */}
+              <div className="flex items-center justify-between px-2 py-1 bg-slate-900/90 border-t border-slate-700/60 text-xs">
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    movePage(index, index - 1);
+                  }}
+                  disabled={index === 0}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition"
+                  title="Move Left"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+
+                <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={e => {
                       e.stopPropagation();
                       duplicatePage(index);
                     }}
-                    className="p-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700"
+                    className="p-1 rounded text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition"
                     title="Duplicate Page"
                   >
-                    <CopyPlus className="w-3.5 h-3.5 text-blue-300" />
+                    <CopyPlus className="w-3 h-3" />
                   </button>
 
                   <button
+                    type="button"
                     onClick={e => {
                       e.stopPropagation();
                       deletePage(index);
                     }}
-                    className="p-1.5 rounded-lg bg-slate-800 text-red-400 hover:bg-red-950/60"
+                    className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
                     title="Delete Page"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      movePage(index, index + 1);
-                    }}
-                    disabled={index === pages.length - 1}
-                    className="p-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-30"
-                    title="Move Right"
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    movePage(index, index + 1);
+                  }}
+                  disabled={index === pages.length - 1}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-20 transition"
+                  title="Move Right"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
-              {/* Card Footer: Paste trigger if clipboard is present */}
+              {/* Paste trigger if clipboard is present */}
               {clipboard && (
                 <button
                   type="button"
@@ -442,6 +517,82 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           );
         })}
       </div>
+
+      {/* Floating Single-Line Horizontal Action Bar for Selected Pages */}
+      <SelectionActionBar
+        selectedIndices={Array.from(selectedIndices)}
+        totalPageCount={pages.length}
+        onClearSelection={() => setSelectedIndices(new Set())}
+        onSelectAll={selectAll}
+        onRotateSelected={handleRotateSelected}
+        onCutSelected={handleCut}
+        onCopySelected={handleCopy}
+        onDeleteSelected={deleteSelected}
+        onDuplicateSelected={handleDuplicateSelected}
+        onExtractSelected={handleExtractSelected}
+        onOpenToolWithPage={(tool, pageNum) => {
+          if (onNavigateToTool) {
+            onNavigateToTool(tool, pageNum);
+          }
+        }}
+        onApplyChanges={handleApplyOrder}
+        isApplying={isApplying}
+      />
+
+      {/* Full-Screen 2-Finger Pinch Zoom Modal */}
+      {zoomModalPage !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-6 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-3xl h-[85vh] bg-slate-900 border border-slate-700 rounded-3xl flex flex-col overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-950/60">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-white">
+                  Page {zoomModalPage} of {document.pageCount}
+                </span>
+                <span className="text-[11px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                  2-Finger Pinch to Zoom
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Rotate directly inside zoom modal */}
+                <button
+                  onClick={async () => {
+                    await handleRotateSelected(90);
+                  }}
+                  className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+                  title="Rotate 90°"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setZoomModalPage(null)}
+                  className="p-1.5 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body with 2-Finger Zoomable Container */}
+            <div className="flex-1 overflow-hidden p-2 sm:p-4 flex items-center justify-center bg-slate-950">
+              <ZoomableContainer className="w-full h-full">
+                {document.thumbnails[zoomModalPage - 1]?.dataUrl ? (
+                  <img
+                    src={document.thumbnails[zoomModalPage - 1].dataUrl}
+                    alt={`Page ${zoomModalPage}`}
+                    className="max-h-full max-w-full object-contain rounded shadow-2xl bg-white"
+                  />
+                ) : (
+                  <div className="text-slate-400 text-sm">Preview unavailable</div>
+                )}
+              </ZoomableContainer>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

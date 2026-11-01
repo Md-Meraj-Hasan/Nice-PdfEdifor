@@ -314,10 +314,12 @@ export async function splitPdfDocuments(
     let chunk = 1;
     for (let i = 0; i < total; i += n) {
       const chunkIndices: number[] = [];
-      for (let j = i; j < Math.min(i + n, total); j++) {
+      const end = Math.min(i + n, total);
+      for (let j = i; j < end; j++) {
         chunkIndices.push(j);
       }
-      await createSubDoc(chunkIndices, `part_${chunk}_pages_${i + 1}-${Math.min(i + n, total)}.pdf`);
+      const rangeLabel = i + 1 === end ? `page_${end}` : `pages_${i + 1}-${end}`;
+      await createSubDoc(chunkIndices, `part_${chunk}_${rangeLabel}.pdf`);
       chunk++;
     }
   } else if (mode === 'odd-even') {

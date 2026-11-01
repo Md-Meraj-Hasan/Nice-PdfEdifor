@@ -12,6 +12,9 @@ import {
   Combine,
   Crop,
   Layers,
+  Lock,
+  RotateCw,
+  Maximize2,
 } from 'lucide-react';
 import { createSamplePdf } from '../utils/samplePdf';
 
@@ -52,23 +55,35 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     }
   };
 
+  const allTools = [
+    { label: 'Organize Pages', icon: <Layers className="w-3.5 h-3.5 text-blue-400" />, desc: 'Reorder, cut, copy' },
+    { label: 'Edit Text', icon: <Type className="w-3.5 h-3.5 text-indigo-400" />, desc: 'Add & replace text' },
+    { label: 'Split PDF', icon: <Split className="w-3.5 h-3.5 text-purple-400" />, desc: '2-page pairs, ranges' },
+    { label: 'Merge PDFs', icon: <Combine className="w-3.5 h-3.5 text-blue-400" />, desc: 'Combine documents' },
+    { label: 'Crop Margins', icon: <Crop className="w-3.5 h-3.5 text-emerald-400" />, desc: 'Trim page edges' },
+    { label: 'Rotate 90°/180°', icon: <RotateCw className="w-3.5 h-3.5 text-cyan-400" />, desc: 'CW & CCW rotate' },
+    { label: 'Offline OCR', icon: <ScanText className="w-3.5 h-3.5 text-amber-400" />, desc: 'Text scan without web' },
+    { label: 'Password Security', icon: <Lock className="w-3.5 h-3.5 text-rose-400" />, desc: 'Encrypt & decrypt' },
+    { label: 'Android APK', icon: <Smartphone className="w-3.5 h-3.5 text-teal-400" />, desc: '1-Click GitHub Actions' },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      {/* Hero Header */}
-      <div className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-3">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          100% Client-Side & Offline — Zero Server Uploads
+    <div className="h-full max-h-[calc(100vh-65px)] w-full max-w-4xl mx-auto px-4 py-2 sm:py-4 flex flex-col justify-between overflow-hidden">
+      {/* 1. Header (Compact) */}
+      <div className="text-center pt-1 pb-2">
+        <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[11px] font-semibold mb-2">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>100% Client-Side & Offline — Zero Server Uploads</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-          All-in-One Offline <span className="text-blue-500">PDF Editor</span>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight">
+          All-in-One Offline <span className="text-blue-400">PDF Editor & Tools</span>
         </h1>
-        <p className="mt-2 text-sm sm:text-base text-slate-400 max-w-xl mx-auto">
-          Merge, split by conditions, crop, rotate, resize, organize pages, OCR, and edit text offline. Export as a native Android APK via GitHub Actions.
+        <p className="mt-1 text-xs text-slate-400 max-w-lg mx-auto line-clamp-1 sm:line-clamp-none">
+          Edit text, split into pairs, merge, crop, rotate, OCR, and build Android APK in your browser.
         </p>
       </div>
 
-      {/* Upload Dropzone */}
+      {/* 2. Upload Dropzone (Compact, prominent, fits on screen) */}
       <div
         onDragOver={e => {
           e.preventDefault();
@@ -81,10 +96,10 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           handleFiles(e.dataTransfer.files);
         }}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative border-2 border-dashed rounded-3xl p-8 sm:p-12 text-center cursor-pointer transition-all ${
+        className={`relative border-2 border-dashed rounded-3xl p-5 sm:p-7 text-center cursor-pointer transition-all flex flex-col items-center justify-center my-auto ${
           isDragging
             ? 'border-blue-500 bg-blue-500/10 scale-[1.01]'
-            : 'border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 hover:border-slate-600'
+            : 'border-slate-700/80 bg-slate-800/40 hover:bg-slate-800/70 hover:border-slate-500'
         }`}
       >
         <input
@@ -95,18 +110,19 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           onChange={e => handleFiles(e.target.files)}
         />
 
-        <div className="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400 mb-4 group-hover:scale-110 transition-transform">
-          <UploadCloud className="w-8 h-8" />
+        <div className="w-14 h-14 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3 shadow-lg shadow-blue-900/20">
+          <UploadCloud className="w-7 h-7" />
         </div>
 
-        <h3 className="text-lg font-bold text-white mb-1">
-          Drop your PDF here, or <span className="text-blue-400 underline underline-offset-4">browse</span>
+        <h3 className="text-base sm:text-lg font-bold text-white mb-1">
+          Choose a PDF file or <span className="text-blue-400 underline underline-offset-4">Browse</span>
         </h3>
-        <p className="text-xs text-slate-400 mb-6">
-          Supports any PDF. Files never leave your browser or device.
+        <p className="text-xs text-slate-400 mb-4">
+          Click anywhere or drag & drop. Files remain 100% private on your device.
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        {/* Quick action buttons inside dropzone */}
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
           <button
             type="button"
             onClick={e => {
@@ -114,10 +130,10 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
               handleLoadSample();
             }}
             disabled={isLoadingSample}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs sm:text-sm font-semibold transition shadow-sm disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-700/90 hover:bg-slate-600 text-white text-xs font-semibold transition shadow-sm disabled:opacity-50 active:scale-95"
           >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            {isLoadingSample ? 'Generating sample...' : 'Try with Sample PDF (3 Pages)'}
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{isLoadingSample ? 'Generating sample...' : 'Try Sample PDF (3 Pages)'}</span>
           </button>
 
           <button
@@ -126,94 +142,34 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
               e.stopPropagation();
               onOpenApkBuilder();
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-semibold transition shadow-md shadow-emerald-950"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-950 active:scale-95"
           >
-            <Smartphone className="w-4 h-4" />
-            Build Android APK (ZIP Project)
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Build Android APK (ZIP Project)</span>
           </button>
         </div>
       </div>
 
-      {/* Feature Grid Summary */}
-      <div className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-blue-400 font-semibold text-xs mb-1">
-            <Scissors className="w-4 h-4" />
-            Cut, Copy & Paste
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Clipboard for PDF pages. Cut or duplicate pages anywhere.
-          </p>
+      {/* 3. Single Horizontal Line of Available Tools (Compact, No Vertical Scroll) */}
+      <div className="pb-2">
+        <div className="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between px-1">
+          <span>All Tools Included (Available once PDF is opened):</span>
+          <span className="text-[10px] text-emerald-400">Offline & Fast</span>
         </div>
 
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs mb-1">
-            <Crop className="w-4 h-4" />
-            Crop by Condition
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Crop margins on all, odd/even, or landscape pages.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-purple-400 font-semibold text-xs mb-1">
-            <Split className="w-4 h-4" />
-            Condition Split
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Split into single pages, custom ranges, or odd/even files.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs mb-1">
-            <ScanText className="w-4 h-4" />
-            Offline OCR
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Extract text from scanned PDFs & images without server.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-cyan-400 font-semibold text-xs mb-1">
-            <Type className="w-4 h-4" />
-            Edit Text & Whiteout
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Cover existing text, type new text, sign & add stamps.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-rose-400 font-semibold text-xs mb-1">
-            <Combine className="w-4 h-4" />
-            Merge & Reorder
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Combine multiple PDF files with custom page ranges.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs mb-1">
-            <Layers className="w-4 h-4" />
-            Size & Compress
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Change dimensions to A4, Letter, Custom and compress.
-          </p>
-        </div>
-
-        <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-700/60">
-          <div className="flex items-center gap-2 text-teal-400 font-semibold text-xs mb-1">
-            <Smartphone className="w-4 h-4" />
-            GitHub APK Builder
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Download project ZIP & build Android APK via GitHub Actions.
-          </p>
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+          {allTools.map((tool, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700/70 shrink-0 select-none hover:border-slate-600 transition"
+            >
+              {tool.icon}
+              <div className="text-left">
+                <div className="text-xs font-bold text-white whitespace-nowrap">{tool.label}</div>
+                <div className="text-[10px] text-slate-400 whitespace-nowrap">{tool.desc}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

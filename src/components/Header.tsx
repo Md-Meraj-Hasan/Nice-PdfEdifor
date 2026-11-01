@@ -7,6 +7,8 @@ import {
   Plus,
   PackageCheck,
   CheckCircle2,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { ToolId } from '../types/pdf';
@@ -20,6 +22,10 @@ interface HeaderProps {
   onNewFile: () => void;
   onDownloadCurrentPdf: () => void;
   hasUnsavedChanges?: boolean;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,6 +35,10 @@ export const Header: React.FC<HeaderProps> = ({
   onNewFile,
   onDownloadCurrentPdf,
   hasUnsavedChanges,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }) => {
   const { isInstallable, install } = usePWAInstall();
 
@@ -60,6 +70,28 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Undo & Redo buttons */}
+          {fileName && (
+            <div className="flex items-center bg-slate-800/90 rounded-xl p-0.5 border border-slate-750">
+              <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition active:scale-95"
+                title="Undo (Ctrl+Z)"
+              >
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onRedo}
+                disabled={!canRedo}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition active:scale-95"
+                title="Redo (Ctrl+Y)"
+              >
+                <Redo2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* GitHub APK Builder Button */}
           <button
             onClick={() => setActiveTool('apk-builder')}

@@ -10,19 +10,36 @@ import {
 } from 'lucide-react';
 import { ConditionFilter, CropMargins, PdfDocument } from '../../types/pdf';
 import { cropPdfPages, parsePageRange } from '../../services/pdfEngine';
+import { ZoomableContainer } from '../ZoomableContainer';
 
 interface CropToolProps {
   document: PdfDocument;
-  onUpdateDocumentBytes: (bytes: Uint8Array, message?: string) => Promise<void>;
+  initialPage?: number;
+  onUpdateDocumentBytes: (
+    bytes: Uint8Array,
+    message?: string,
+    skipHistoryPush?: boolean,
+    changedPageNumbers?: number[],
+    updatedThumbnailsDirect?: any[]
+  ) => Promise<void>;
 }
 
 export const CropTool: React.FC<CropToolProps> = ({
   document,
+  initialPage,
   onUpdateDocumentBytes,
 }) => {
-  const [condition, setCondition] = useState<ConditionFilter>('all');
-  const [selectedPagesStr, setSelectedPagesStr] = useState<string>('1');
-  const [previewPage, setPreviewPage] = useState<number>(1);
+  const [condition, setCondition] = useState<ConditionFilter>(initialPage ? 'selected' : 'all');
+  const [selectedPagesStr, setSelectedPagesStr] = useState<string>(initialPage ? String(initialPage) : '1');
+  const [previewPage, setPreviewPage] = useState<number>(initialPage || 1);
+
+  React.useEffect(() => {
+    if (initialPage && initialPage >= 1 && initialPage <= document.pageCount) {
+      setCondition('selected');
+      setSelectedPagesStr(String(initialPage));
+      setPreviewPage(initialPage);
+    }
+  }, [initialPage, document.pageCount]);
   const [margins, setMargins] = useState<CropMargins>({
     top: 10,
     bottom: 10,
@@ -60,7 +77,8 @@ export const CropTool: React.FC<CropToolProps> = ({
         condition,
         selectedIndices
       );
-      await onUpdateDocumentBytes(newBytes, 'Pages cropped successfully');
+      const changedPageNums = condition === 'selected' ? selectedIndices.map(i => i + 1) : undefined;
+      await onUpdateDocumentBytes(newBytes, 'Pages cropped successfully', false, changedPageNums);
     } catch (err) {
       console.error(err);
       alert('Failed to crop PDF pages');
