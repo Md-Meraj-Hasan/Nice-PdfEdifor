@@ -40,6 +40,20 @@ jobs:
           npx cap add android || true
           npx cap sync android
 
+      - name: Align legacy Kotlin standard library dependencies
+        run: |
+          cat >> android/build.gradle <<'EOF'
+
+          // Kotlin 1.8+ includes the former jdk7/jdk8 stdlib classes.
+          // Exclude the obsolete split artifacts pulled by older Android libraries.
+          subprojects {
+              configurations.configureEach {
+                  exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+                  exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+              }
+          }
+          EOF
+
       - name: Grant Execute Permission to Gradle
         run: |
           cd android
