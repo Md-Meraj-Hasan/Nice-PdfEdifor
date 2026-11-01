@@ -1,9 +1,5 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.tsx' // Agar App.tsx nahi hai to ye line hata dein ya App component bana lein // Agar index.css nahi hai to ye line hata dein
+import {createRoot} from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+createRoot(document.getElementById('root')!).render(<App />);

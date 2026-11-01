@@ -1,0 +1,6 @@
+{
+  "name": "PDFMaster Pro - Offline PDF Editor & APK Builder",
+  "description": "Full offline PDF editor for Android & Web. Merge, split, crop, rotate, resize, organize pages, OCR, edit text, whiteout, signatures, and 1-click GitHub Android APK builder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

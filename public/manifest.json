@@ -2,8 +2,19 @@
   "id": "/",
   "name": "PDFMaster Pro - Offline PDF Editor",
   "short_name": "PDFMaster",
+  "description": "Full offline PDF editor: merge, split, crop, rotate, resize, organize pages, OCR, and edit text.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
   "theme_color": "#2563eb",
-  "background_color": "#0f172a"
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }
