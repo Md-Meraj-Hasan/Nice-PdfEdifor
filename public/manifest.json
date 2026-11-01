@@ -1,0 +1,9 @@
+{
+  "id": "/",
+  "name": "PDFMaster Pro - Offline PDF Editor",
+  "short_name": "PDFMaster",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#2563eb",
+  "background_color": "#0f172a"
+}
