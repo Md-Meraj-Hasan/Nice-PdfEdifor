@@ -338,7 +338,7 @@ export default function App() {
       {/* Main Content Area */}
       {document ? (
         <>
-          <main className="flex-1 p-2.5 sm:p-6 max-w-7xl w-full mx-auto">
+          <main className="flex-1 px-2.5 pb-2.5 pt-8 sm:px-6 sm:pb-6 sm:pt-10 max-w-7xl w-full mx-auto">
             {activeTool === 'organize' && (
               <OrganizeTool
                 document={document}
