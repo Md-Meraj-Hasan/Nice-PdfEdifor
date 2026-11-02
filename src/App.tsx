@@ -83,7 +83,7 @@ export default function App() {
       const pageCount = pdfLibDoc.getPageCount();
 
       setProcessStatus(`Rendering ${pageCount} page previews...`);
-      const thumbnails = await generateAllThumbnails(bytes, 260, (curr, total) => {
+      const thumbnails = await generateAllThumbnails(bytes, 1600, (curr, total) => {
         setProcessStatus(`Generating page preview ${curr} of ${total}...`);
       });
 
@@ -181,7 +181,7 @@ export default function App() {
       } else if (changedPageNumbers && changedPageNumbers.length > 0 && document?.thumbnails) {
         thumbnails = await updateSpecificThumbnails(document.thumbnails, verifiedBytes, changedPageNumbers);
       } else {
-        thumbnails = await generateAllThumbnails(verifiedBytes, 260);
+        thumbnails = await generateAllThumbnails(verifiedBytes, 1600);
       }
 
       // Commit only after validation and preview generation both succeed.
