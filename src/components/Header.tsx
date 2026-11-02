@@ -2,6 +2,7 @@ import React from 'react';
 import {
   FileText,
   Download,
+  Smartphone,
   ShieldCheck,
   Plus,
   PackageCheck,
@@ -90,6 +91,18 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </div>
           )}
+
+          {/* GitHub APK Builder Button */}
+          <button
+            onClick={() => setActiveTool('apk-builder')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-md shadow-emerald-950 transition active:scale-95"
+            title="Download full project ZIP & build APK with GitHub Actions"
+          >
+            <Smartphone className="w-4 h-4 text-emerald-200" />
+            <span className="hidden sm:inline">Build Android APK</span>
+            <span className="sm:hidden">APK</span>
+            <span className="px-1.5 py-0.2 rounded bg-black/30 text-[10px] text-emerald-200">ZIP</span>
+          </button>
 
           {/* Save & Download current PDF */}
           {fileName && (

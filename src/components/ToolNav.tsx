@@ -8,6 +8,7 @@ import {
   Maximize2,
   Type,
   ScanText,
+  Smartphone,
   ClipboardPaste,
   Lock,
 } from 'lucide-react';
@@ -70,6 +71,12 @@ export const ToolNav: React.FC<ToolNavProps> = ({
       id: 'security',
       label: 'Security & Password',
       icon: <Lock className="w-4 h-4 text-amber-400" />,
+    },
+    {
+      id: 'apk-builder',
+      label: 'Build Native APK (ZIP)',
+      icon: <Smartphone className="w-4 h-4 text-emerald-400" />,
+      badge: 'GitHub',
     },
   ];
 

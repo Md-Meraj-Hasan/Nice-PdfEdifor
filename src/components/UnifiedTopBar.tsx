@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText,
   Download,
+  Smartphone,
   ShieldCheck,
   Plus,
   Undo2,
@@ -84,7 +85,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
       className="sticky top-0 z-50 bg-slate-900/98 backdrop-blur-xl border-b border-slate-800 px-2 sm:px-4 py-2 shadow-lg"
     >
       {/* SINGLE HORIZONTAL LINE CONTAINER */}
-      <div className="flex items-center justify-between gap-2 max-w-[100vw] overflow-x-hidden">
+      <div className="flex items-center justify-between gap-2 max-w-[100vw] overflow-x-auto no-scrollbar">
         {/* Brand & Home (Compact) */}
         <div className="flex items-center gap-2 shrink-0 pr-1 border-r border-slate-800/80">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
@@ -109,7 +110,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
 
         {/* HORIZONTAL DROPDOWN MENUS FOR EVERY SECTION - ONLY VISIBLE WHEN PDF IS LOADED */}
         {fileName ? (
-          <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar whitespace-nowrap scroll-smooth">
+          <nav className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar">
           {/* SECTION 1: Pages ▾ */}
           <div className="relative">
             <button
@@ -387,7 +388,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
           </div>
         )}
 
-        {/* RIGHT CONTROLS: Undo/Redo, Save As, Open */}
+        {/* RIGHT CONTROLS: Undo/Redo, APK, Export, Open */}
         <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-slate-800/80">
           {/* Undo / Redo */}
           {fileName && (
@@ -411,15 +412,26 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
             </div>
           )}
 
+          {/* GitHub APK Builder Button */}
+          <button
+            onClick={() => setActiveTool('apk-builder')}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition active:scale-95 shrink-0"
+            title="Download full project ZIP & build APK with GitHub Actions"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-200" />
+            <span className="hidden sm:inline">Build APK</span>
+            <span className="px-1 py-0.2 rounded bg-black/30 text-[9px] text-emerald-200">ZIP</span>
+          </button>
+
           {/* Save & Download current PDF */}
           {fileName && (
             <button
               onClick={onDownloadCurrentPdf}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition active:scale-95 shrink-0"
-              title="Save PDF As — choose filename and location"
+              title="Export modified PDF"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Save As</span>
+              <span className="hidden sm:inline">Export</span>
             </button>
           )}
 

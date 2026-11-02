@@ -4,6 +4,7 @@ import {
   FileText,
   Sparkles,
   ShieldCheck,
+  Smartphone,
   Scissors,
   ScanText,
   Type,
@@ -19,9 +20,13 @@ import { createSamplePdf } from '../utils/samplePdf';
 
 interface FileUploaderProps {
   onFileLoaded: (bytes: Uint8Array, fileName: string) => void;
+  onOpenApkBuilder: () => void;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onFileLoaded }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({
+  onFileLoaded,
+  onOpenApkBuilder,
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +64,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileLoaded }) => {
     { label: 'Rotate 90°/180°', icon: <RotateCw className="w-3.5 h-3.5 text-cyan-400" />, desc: 'CW & CCW rotate' },
     { label: 'Offline OCR', icon: <ScanText className="w-3.5 h-3.5 text-amber-400" />, desc: 'Text scan without web' },
     { label: 'Password Security', icon: <Lock className="w-3.5 h-3.5 text-rose-400" />, desc: 'Encrypt & decrypt' },
+    { label: 'Android APK', icon: <Smartphone className="w-3.5 h-3.5 text-teal-400" />, desc: '1-Click GitHub Actions' },
   ];
 
   return (
@@ -73,7 +79,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileLoaded }) => {
           All-in-One Offline <span className="text-blue-400">PDF Editor & Tools</span>
         </h1>
         <p className="mt-1 text-xs text-slate-400 max-w-lg mx-auto line-clamp-1 sm:line-clamp-none">
-          Edit text, split into pairs, merge, crop, rotate, and OCR in your browser.
+          Edit text, split into pairs, merge, crop, rotate, OCR, and build Android APK in your browser.
         </p>
       </div>
 
@@ -130,6 +136,17 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileLoaded }) => {
             <span>{isLoadingSample ? 'Generating sample...' : 'Try Sample PDF (3 Pages)'}</span>
           </button>
 
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onOpenApkBuilder();
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold transition shadow-md shadow-emerald-950 active:scale-95"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>Build Android APK (ZIP Project)</span>
+          </button>
         </div>
       </div>
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { UnifiedTopBar } from './components/UnifiedTopBar';
@@ -18,10 +18,12 @@ import { ResizeTool } from './components/tools/ResizeTool';
 import { EditTool } from './components/tools/EditTool';
 import { OcrTool } from './components/tools/OcrTool';
 import { SecurityTool } from './components/tools/SecurityTool';
+import { ApkBuilderTool } from './components/tools/ApkBuilderTool';
 import { PageClipboard, PageThumbnail, PdfDocument, ToolId } from './types/pdf';
 import { generateAllThumbnails, updateSpecificThumbnails } from './services/pdfRenderer';
 import { checkPdfEncryption, decryptPdfDocument } from './services/pdfEngine';
 import { CheckCircle2, ShieldCheck, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
+import { ExportModal } from './components/ExportModal';
 
 export default function App() {
   const [document, setDocument] = useState<PdfDocument | null>(null);
@@ -31,13 +33,11 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processStatus, setProcessStatus] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
 
   // Undo / Redo history stack
   const [history, setHistory] = useState<Uint8Array[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  const historyRef = useRef<Uint8Array[]>([]);
-  const historyIndexRef = useRef<number>(-1);
-  const historyBusyRef = useRef<boolean>(false);
 
   // Protected PDF unlock modal state
   const [pendingProtectedFile, setPendingProtectedFile] = useState<{
@@ -82,7 +82,7 @@ export default function App() {
       const pageCount = pdfLibDoc.getPageCount();
 
       setProcessStatus(`Rendering ${pageCount} page previews...`);
-      const thumbnails = await generateAllThumbnails(bytes, 1600, (curr, total) => {
+      const thumbnails = await generateAllThumbnails(bytes, 260, (curr, total) => {
         setProcessStatus(`Generating page preview ${curr} of ${total}...`);
       });
 
@@ -100,9 +100,7 @@ export default function App() {
       setTargetPageForTool(1);
 
       // Initialize undo/redo history
-      historyRef.current = [new Uint8Array(bytes)];
-      historyIndexRef.current = 0;
-      setHistory(historyRef.current);
+      setHistory([bytes]);
       setHistoryIndex(0);
 
       showToast(`Loaded ${fileName} (${pageCount} pages)`);
@@ -160,47 +158,42 @@ export default function App() {
     skipHistoryPush = false,
     changedPageNumbers?: number[],
     updatedThumbnailsDirect?: PageThumbnail[]
-  ): Promise<void> => {
-    const isQuickUpdate = !!updatedThumbnailsDirect || (changedPageNumbers && changedPageNumbers.length > 0);
+  ) => {
     try {
+      const isQuickUpdate = !!updatedThumbnailsDirect || (changedPageNumbers && changedPageNumbers.length > 0);
       if (!isQuickUpdate) {
         setIsProcessing(true);
         setProcessStatus('Updating document & previews...');
       }
 
-      // Validate the exact output bytes before changing the active document.
-      const verifiedBytes = new Uint8Array(newBytes);
-      const pdfLibDoc = await PDFDocument.load(verifiedBytes, { ignoreEncryption: true });
+      const pdfLibDoc = await PDFDocument.load(newBytes, { ignoreEncryption: true });
       const pageCount = pdfLibDoc.getPageCount();
-      if (pageCount < 1) throw new Error('The resulting PDF has no pages.');
 
       let thumbnails: PageThumbnail[];
       if (updatedThumbnailsDirect) {
+        // Instant 0ms update: reorder, cut, copy, duplicate
         thumbnails = updatedThumbnailsDirect;
       } else if (changedPageNumbers && changedPageNumbers.length > 0 && document?.thumbnails) {
-        thumbnails = await updateSpecificThumbnails(document.thumbnails, verifiedBytes, changedPageNumbers);
+        // Fast incremental ~50ms update: only re-render the modified page(s)
+        thumbnails = await updateSpecificThumbnails(document.thumbnails, newBytes, changedPageNumbers);
       } else {
-        thumbnails = await generateAllThumbnails(verifiedBytes, 1600);
+        thumbnails = await generateAllThumbnails(newBytes, 260);
       }
 
-      // Commit only after validation and preview generation both succeed.
       setDocument(prev => {
         if (!prev) return null;
         return {
           ...prev,
-          bytes: verifiedBytes,
-          size: verifiedBytes.byteLength,
+          bytes: newBytes,
+          size: newBytes.byteLength,
           pageCount,
           thumbnails,
         };
       });
 
       if (!skipHistoryPush) {
-        // Update refs synchronously so rapid consecutive operations never use stale React state.
-        const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
-        nextHistory.push(new Uint8Array(verifiedBytes));
-        historyRef.current = nextHistory;
-        historyIndexRef.current = nextHistory.length - 1;
+        const nextHistory = history.slice(0, historyIndex + 1);
+        nextHistory.push(newBytes);
         setHistory(nextHistory);
         setHistoryIndex(nextHistory.length - 1);
       }
@@ -208,54 +201,36 @@ export default function App() {
       if (message) showToast(message);
     } catch (err) {
       console.error('Failed to update PDF document:', err);
-      throw err instanceof Error ? err : new Error('Failed to apply PDF modification');
+      alert('Failed to apply modification');
     } finally {
-      if (!isQuickUpdate) {
-        setIsProcessing(false);
-        setProcessStatus('');
-      }
+      setIsProcessing(false);
+      setProcessStatus('');
     }
   };
+
   /**
    * Undo last operation
    */
   const handleUndo = useCallback(async () => {
-    if (historyBusyRef.current || historyIndexRef.current <= 0) return;
-    historyBusyRef.current = true;
-    const previousIndex = historyIndexRef.current;
-    const targetIndex = previousIndex - 1;
-    try {
-      const targetBytes = historyRef.current[targetIndex];
-      await handleUpdateDocumentBytes(targetBytes, 'Undo applied', true);
-      historyIndexRef.current = targetIndex;
-      setHistoryIndex(targetIndex);
-    } catch (err) {
-      console.error('Undo failed:', err);
-      alert('Undo could not be completed. The current PDF has been kept unchanged.');
-    } finally {
-      historyBusyRef.current = false;
+    if (historyIndex > 0) {
+      const prevIdx = historyIndex - 1;
+      const prevBytes = history[prevIdx];
+      setHistoryIndex(prevIdx);
+      await handleUpdateDocumentBytes(prevBytes, 'Undo applied', true);
     }
-  }, [handleUpdateDocumentBytes]);
+  }, [history, historyIndex]);
 
   /**
    * Redo last operation
    */
   const handleRedo = useCallback(async () => {
-    if (historyBusyRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
-    historyBusyRef.current = true;
-    const targetIndex = historyIndexRef.current + 1;
-    try {
-      const targetBytes = historyRef.current[targetIndex];
-      await handleUpdateDocumentBytes(targetBytes, 'Redo applied', true);
-      historyIndexRef.current = targetIndex;
-      setHistoryIndex(targetIndex);
-    } catch (err) {
-      console.error('Redo failed:', err);
-      alert('Redo could not be completed. The current PDF has been kept unchanged.');
-    } finally {
-      historyBusyRef.current = false;
+    if (historyIndex < history.length - 1) {
+      const nextIdx = historyIndex + 1;
+      const nextBytes = history[nextIdx];
+      setHistoryIndex(nextIdx);
+      await handleUpdateDocumentBytes(nextBytes, 'Redo applied', true);
     }
-  }, [handleUpdateDocumentBytes]);
+  }, [history, historyIndex]);
 
   // Global Keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y or Ctrl+Shift+Z)
   useEffect(() => {
@@ -280,83 +255,17 @@ export default function App() {
   }, [handleUndo, handleRedo]);
 
   /**
-   * Save the latest PDF using the system Save As picker where supported.
-   * The browser picker lets the user choose both the filename and destination.
-   * Older browsers/WebViews fall back to the normal Downloads flow.
+   * Export / Download the active PDF file with guaranteed Android local storage saving
    */
-  const handleDownloadCurrentPdf = async () => {
+  const handleDownloadCurrentPdf = () => {
     if (!document) return;
-
-    const exportBytes = new Uint8Array(document.bytes);
-    const suggestedName = document.name.toLowerCase().endsWith('.pdf')
-      ? document.name
-      : `${document.name}.pdf`;
-
-    // Open the native/browser Save As dialog directly from the click handler,
-    // before awaiting PDF validation, so browsers retain the user gesture.
-    const pickerWindow = window as Window & {
-      showSaveFilePicker?: (options: {
-        suggestedName: string;
-        types: Array<{ description: string; accept: Record<string, string[]> }>;
-      }) => Promise<{
-        name: string;
-        createWritable: () => Promise<{
-          write: (data: Blob | Uint8Array) => Promise<void>;
-          close: () => Promise<void>;
-          abort?: () => Promise<void>;
-        }>;
-      }>;
-    };
-
-    let saveHandle: Awaited<ReturnType<NonNullable<typeof pickerWindow.showSaveFilePicker>>> | null = null;
-    try {
-      if (pickerWindow.showSaveFilePicker) {
-        saveHandle = await pickerWindow.showSaveFilePicker({
-          suggestedName,
-          types: [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
-        });
-      }
-
-      // Never write/download a malformed or stale PDF snapshot.
-      const verified = await PDFDocument.load(exportBytes, { ignoreEncryption: true });
-      if (verified.getPageCount() !== document.pageCount) {
-        throw new Error('PDF page count verification failed.');
-      }
-
-      if (saveHandle) {
-        const writable = await saveHandle.createWritable();
-        try {
-          await writable.write(new Blob([exportBytes], { type: 'application/pdf' }));
-          await writable.close();
-        } catch (writeError) {
-          if (writable.abort) await writable.abort().catch(() => undefined);
-          throw writeError;
-        }
-        showToast(`Saved successfully: ${saveHandle.name}`);
-        return;
-      }
-
-      // Fallback for browsers/WebViews without the File System Access API.
-      // The browser/Android download manager decides the destination.
-      const blob = new Blob([exportBytes], { type: 'application/pdf' });
-      saveAs(blob, suggestedName);
-      showToast(`Download started: ${suggestedName}. Check your Downloads folder or browser download prompt.`);
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        showToast('Save cancelled. Your PDF is still open and unchanged.');
-        return;
-      }
-      console.error('PDF save failed:', err);
-      alert('PDF could not be saved. Your edited document is still open and unchanged. Please try Save As again.');
-    }
+    setShowExportModal(true);
   };
 
   const handleNewFile = () => {
     if (confirm('Do you want to close the current PDF and open a new one?')) {
       setDocument(null);
       setClipboard(null);
-      historyRef.current = [];
-      historyIndexRef.current = -1;
       setHistory([]);
       setHistoryIndex(-1);
     }
@@ -388,7 +297,7 @@ export default function App() {
       {/* Main Content Area */}
       {document ? (
         <>
-          <main className="flex-1 px-2.5 pb-2.5 pt-8 sm:px-6 sm:pb-6 sm:pt-10 max-w-7xl w-full mx-auto">
+          <main className="flex-1 p-2.5 sm:p-6 max-w-7xl w-full mx-auto">
             {activeTool === 'organize' && (
               <OrganizeTool
                 document={document}
@@ -443,6 +352,7 @@ export default function App() {
                 document={document}
                 initialPage={targetPageForTool}
                 onUpdateDocumentBytes={handleUpdateDocumentBytes}
+                onExportDocument={handleDownloadCurrentPdf}
               />
             )}
 
@@ -460,6 +370,7 @@ export default function App() {
               />
             )}
 
+            {activeTool === 'apk-builder' && <ApkBuilderTool />}
           </main>
 
           {/* Native Smartphone Bottom Navigation Bar */}
@@ -471,7 +382,22 @@ export default function App() {
         </>
       ) : (
         <main className="flex-1 flex flex-col justify-center overflow-hidden">
-          <FileUploader onFileLoaded={handleLoadDocument} />
+          {activeTool === 'apk-builder' ? (
+            <div className="max-w-4xl mx-auto p-4 w-full h-full overflow-y-auto">
+              <button
+                onClick={() => setActiveTool('organize')}
+                className="mb-4 text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1"
+              >
+                ← Back to File Upload
+              </button>
+              <ApkBuilderTool />
+            </div>
+          ) : (
+            <FileUploader
+              onFileLoaded={handleLoadDocument}
+              onOpenApkBuilder={() => setActiveTool('apk-builder')}
+            />
+          )}
         </main>
       )}
 
@@ -573,6 +499,17 @@ export default function App() {
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
+      )}
+
+      {/* Export / Save PDF Modal with Guaranteed Android Storage Saving */}
+      {document && (
+        <ExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          bytes={document.bytes}
+          defaultFileName={document.name}
+          onShowToast={showToast}
+        />
       )}
     </div>
   );
