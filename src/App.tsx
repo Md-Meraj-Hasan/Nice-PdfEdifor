@@ -18,7 +18,6 @@ import { ResizeTool } from './components/tools/ResizeTool';
 import { EditTool } from './components/tools/EditTool';
 import { OcrTool } from './components/tools/OcrTool';
 import { SecurityTool } from './components/tools/SecurityTool';
-import { ApkBuilderTool } from './components/tools/ApkBuilderTool';
 import { PageClipboard, PageThumbnail, PdfDocument, ToolId } from './types/pdf';
 import { generateAllThumbnails, updateSpecificThumbnails } from './services/pdfRenderer';
 import { checkPdfEncryption, decryptPdfDocument } from './services/pdfEngine';
@@ -461,7 +460,6 @@ export default function App() {
               />
             )}
 
-            {activeTool === 'apk-builder' && <ApkBuilderTool />}
           </main>
 
           {/* Native Smartphone Bottom Navigation Bar */}
@@ -473,22 +471,7 @@ export default function App() {
         </>
       ) : (
         <main className="flex-1 flex flex-col justify-center overflow-hidden">
-          {activeTool === 'apk-builder' ? (
-            <div className="max-w-4xl mx-auto p-4 w-full h-full overflow-y-auto">
-              <button
-                onClick={() => setActiveTool('organize')}
-                className="mb-4 text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1"
-              >
-                ← Back to File Upload
-              </button>
-              <ApkBuilderTool />
-            </div>
-          ) : (
-            <FileUploader
-              onFileLoaded={handleLoadDocument}
-              onOpenApkBuilder={() => setActiveTool('apk-builder')}
-            />
-          )}
+          <FileUploader onFileLoaded={handleLoadDocument} />
         </main>
       )}
 
