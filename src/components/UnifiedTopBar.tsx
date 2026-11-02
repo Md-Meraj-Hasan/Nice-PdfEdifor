@@ -416,11 +416,10 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
           <button
             onClick={() => setActiveTool('apk-builder')}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition active:scale-95 shrink-0"
-            title="Download full project ZIP & build APK with GitHub Actions"
+            title="Build Android APK with GitHub Actions"
           >
             <Smartphone className="w-3.5 h-3.5 text-emerald-200" />
             <span className="hidden sm:inline">Build APK</span>
-            <span className="px-1 py-0.2 rounded bg-black/30 text-[9px] text-emerald-200">ZIP</span>
           </button>
 
           {/* Save & Download current PDF */}
@@ -428,10 +427,10 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
             <button
               onClick={onDownloadCurrentPdf}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition active:scale-95 shrink-0"
-              title="Export modified PDF"
+              title="Save PDF As — choose filename and location"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export</span>
+              <span className="hidden sm:inline">Save As</span>
             </button>
           )}
 
