@@ -416,11 +416,16 @@ export async function bakeAnnotationsIntoPdf(
         // Optional background color (e.g. whiteout + text)
         if (ann.bgColor) {
           const bg = hexToRgb(ann.bgColor);
+          // Slightly extend the cover beyond the detected glyph bounds to
+          // hide anti-aliased edges and descenders from the original text.
+          const coverBleed = 1.5;
+          const coverX = Math.max(0, pdfX - coverBleed);
+          const coverY = Math.max(0, pdfY - coverBleed);
           page.drawRectangle({
-            x: pdfX,
-            y: pdfY,
-            width: pdfW,
-            height: pdfH,
+            x: coverX,
+            y: coverY,
+            width: Math.min(width - coverX, pdfW + coverBleed * 2),
+            height: Math.min(height - coverY, pdfH + coverBleed * 2),
             color: rgb(bg.r, bg.g, bg.b),
           });
         }
