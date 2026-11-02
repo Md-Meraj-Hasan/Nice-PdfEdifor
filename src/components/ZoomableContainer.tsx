@@ -135,7 +135,7 @@ export const ZoomableContainer: React.FC<ZoomableContainerProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden select-none touch-none ${className}`}
+      className={`relative isolate overflow-hidden contain-paint select-none touch-none ${className}`}
     >
       {/* Zoomable Content */}
       <div
@@ -145,13 +145,13 @@ export const ZoomableContainer: React.FC<ZoomableContainerProps> = ({
           transformOrigin: 'center center',
           transition: isDraggingRef.current ? 'none' : 'transform 0.1s ease-out',
         }}
-        className="w-full h-full flex items-center justify-center will-change-transform"
+        className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden will-change-transform"
       >
         {children}
       </div>
 
       {/* Floating Zoom Controls for Mobile & Desktop */}
-      <div className="absolute bottom-3 right-3 z-30 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md px-2 py-1.5 rounded-2xl border border-slate-700/80 shadow-2xl text-slate-200">
+      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md px-2 py-1.5 rounded-2xl border border-slate-700/80 shadow-2xl text-slate-200">
         <button
           type="button"
           onClick={zoomOut}
