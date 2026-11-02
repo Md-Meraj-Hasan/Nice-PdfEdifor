@@ -42,8 +42,6 @@ export async function generateProjectZip(onProgress?: (percent: number, status: 
           '@capacitor/android': '^7.0.1',
           '@capacitor/cli': '^7.0.1',
           '@capacitor/core': '^7.0.1',
-          '@capacitor/filesystem': '^7.0.0',
-          '@capacitor/share': '^7.0.0',
           '@pdfsmaller/pdf-decrypt': '^1.0.1',
           '@pdfsmaller/pdf-encrypt': '^1.2.0',
           '@tailwindcss/vite': '^4.3.3',
@@ -198,7 +196,7 @@ jobs:
 
       - name: Setup Capacitor Android
         run: |
-          npm install --save @capacitor/core @capacitor/cli @capacitor/android @capacitor/filesystem @capacitor/share --legacy-peer-deps
+          npm install --save @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
           npx cap add android || true
           npx cap sync android
 

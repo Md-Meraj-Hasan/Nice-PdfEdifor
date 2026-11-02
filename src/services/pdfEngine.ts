@@ -383,39 +383,8 @@ export async function bakeAnnotationsIntoPdf(
   annotationsByPage: Record<number, PageAnnotation[]> // 1-based page numbers
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(bytes);
+  const fontHelvetica = await doc.embedFont(StandardFonts.Helvetica);
   const fontHelveticaBold = await doc.embedFont(StandardFonts.HelveticaBold);
-  
-  // Font cache for standard PDF fonts
-  const fontCache = new Map<string, any>();
-  const getFontForAnnotation = async (
-    family?: 'sans-serif' | 'serif' | 'monospace',
-    isBold?: boolean,
-    isItalic?: boolean
-  ) => {
-    let key = StandardFonts.Helvetica;
-    if (family === 'serif') {
-      if (isBold && isItalic) key = StandardFonts.TimesRomanBoldItalic;
-      else if (isBold) key = StandardFonts.TimesRomanBold;
-      else if (isItalic) key = StandardFonts.TimesRomanItalic;
-      else key = StandardFonts.TimesRoman;
-    } else if (family === 'monospace') {
-      if (isBold && isItalic) key = StandardFonts.CourierBoldOblique;
-      else if (isBold) key = StandardFonts.CourierBold;
-      else if (isItalic) key = StandardFonts.CourierOblique;
-      else key = StandardFonts.Courier;
-    } else {
-      if (isBold && isItalic) key = StandardFonts.HelveticaBoldOblique;
-      else if (isBold) key = StandardFonts.HelveticaBold;
-      else if (isItalic) key = StandardFonts.HelveticaOblique;
-      else key = StandardFonts.Helvetica;
-    }
-
-    if (!fontCache.has(key)) {
-      const embedded = await doc.embedFont(key as any);
-      fontCache.set(key, embedded);
-    }
-    return fontCache.get(key);
-  };
 
   const total = doc.getPageCount();
 
@@ -444,7 +413,7 @@ export async function bakeAnnotationsIntoPdf(
           color: rgb(c.r, c.g, c.b),
         });
       } else if (ann.type === 'text') {
-        // Optional background color (e.g. whiteout/cover-up under text)
+        // Optional background color (e.g. whiteout + text)
         if (ann.bgColor) {
           const bg = hexToRgb(ann.bgColor);
           page.drawRectangle({
@@ -457,34 +426,15 @@ export async function bakeAnnotationsIntoPdf(
         }
 
         const tc = hexToRgb(ann.color || '#000000');
-        const font = await getFontForAnnotation(ann.fontFamily, ann.isBold, ann.isItalic);
-        const fontSize = Math.max(6, ann.fontSize || 14);
+        const font = ann.isBold ? fontHelveticaBold : fontHelvetica;
+        const fontSize = Math.max(8, ann.fontSize || 14);
 
         // Draw text lines
         const lines = ann.text.split('\n');
-        const lineHeight = fontSize * 1.2;
-
         lines.forEach((line, lineIdx) => {
-          let baselineY: number;
-          if (ann.baselineYPct !== undefined && lines.length === 1) {
-            baselineY = height - (ann.baselineYPct / 100) * height;
-          } else {
-            baselineY = pdfY + pdfH - (lineIdx * lineHeight) - (fontSize * 0.78);
-          }
-
-          let textX = pdfX;
-          if (ann.textAlign === 'center' || ann.textAlign === 'right') {
-            const textWidth = font.widthOfTextAtSize(line, fontSize);
-            if (ann.textAlign === 'center') {
-              textX = pdfX + Math.max(0, (pdfW - textWidth) / 2);
-            } else if (ann.textAlign === 'right') {
-              textX = pdfX + Math.max(0, pdfW - textWidth);
-            }
-          }
-
           page.drawText(line, {
-            x: textX,
-            y: baselineY,
+            x: pdfX + 4,
+            y: pdfY + pdfH - (lineIdx + 1) * (fontSize * 1.2),
             size: fontSize,
             font,
             color: rgb(tc.r, tc.g, tc.b),

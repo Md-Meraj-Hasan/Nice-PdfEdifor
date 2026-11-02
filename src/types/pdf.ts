@@ -56,9 +56,6 @@ export interface TextAnnotation extends BaseAnnotation {
   bgColor?: string;
   isBold?: boolean;
   isItalic?: boolean;
-  fontFamily?: 'sans-serif' | 'serif' | 'monospace';
-  baselineYPct?: number; // Exact baseline in % of page height
-  textAlign?: 'left' | 'center' | 'right';
 }
 
 export interface WhiteoutAnnotation extends BaseAnnotation {
