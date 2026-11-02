@@ -328,21 +328,41 @@ export const EditTool: React.FC<EditToolProps> = ({
 
   // Save all annotations into the PDF permanently
   const handleSaveToPdf = async () => {
+    if (isBaking) return;
+    const pendingAnnotations = Object.fromEntries(
+      Object.entries(annotations).filter(([, items]) => items.length > 0)
+    ) as Record<number, PageAnnotation[]>;
+    if (Object.keys(pendingAnnotations).length === 0) return;
+
     try {
       setIsBaking(true);
-      const newBytes = await bakeAnnotationsIntoPdf(document.bytes, annotations);
-      const editedPageNumbers = Object.keys(annotations).map(Number);
+      // Bake a stable snapshot. Do not clear editor state until parent confirms commit.
+      const sourceBytes = new Uint8Array(document.bytes);
+      const newBytes = await bakeAnnotationsIntoPdf(sourceBytes, pendingAnnotations);
+      const verifyDoc = await PDFDocument.load(newBytes, { ignoreEncryption: true });
+      if (verifyDoc.getPageCount() !== document.pageCount) {
+        throw new Error('Edited PDF validation failed: page count changed unexpectedly.');
+      }
+
+      const editedPageNumbers = Object.keys(pendingAnnotations).map(Number);
       await onUpdateDocumentBytes(
         newBytes,
         'Text and annotations saved to PDF permanently',
         false,
-        editedPageNumbers.length > 0 ? editedPageNumbers : [currentPage]
+        editedPageNumbers
       );
-      setAnnotations({});
+
+      setAnnotations(prev => {
+        const next = { ...prev };
+        for (const pageNum of editedPageNumbers) delete next[pageNum];
+        return next;
+      });
       setSelectedAnnId(null);
     } catch (err) {
-      console.error(err);
-      alert('Failed to save annotations to PDF');
+      console.error('Failed to save annotations to PDF:', err);
+      alert(err instanceof Error
+        ? `Could not save edits: ${err.message}`
+        : 'Could not save edits. Your annotations are still available; please try again.');
     } finally {
       setIsBaking(false);
     }
