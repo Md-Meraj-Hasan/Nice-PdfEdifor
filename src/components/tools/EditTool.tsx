@@ -24,7 +24,6 @@ import {
   Pipette,
   Check,
   Maximize2,
-  Download,
 } from 'lucide-react';
 import { PageAnnotation, PdfDocument, TextAnnotation } from '../../types/pdf';
 import { bakeAnnotationsIntoPdf } from '../../services/pdfEngine';
@@ -41,14 +40,12 @@ interface EditToolProps {
     changedPageNumbers?: number[],
     updatedThumbnailsDirect?: any[]
   ) => Promise<void>;
-  onExportDocument?: () => void;
 }
 
 export const EditTool: React.FC<EditToolProps> = ({
   document,
   initialPage = 1,
   onUpdateDocumentBytes,
-  onExportDocument,
 }) => {
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
 
@@ -592,28 +589,11 @@ export const EditTool: React.FC<EditToolProps> = ({
           <button
             onClick={handleSaveToPdf}
             disabled={isBaking || Object.values(annotations).every(a => a.length === 0)}
-            className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition disabled:opacity-40 active:scale-95 shrink-0"
-            title="Bake and apply text edits to PDF"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition disabled:opacity-40 active:scale-95"
           >
             <Sparkles className="w-4 h-4" />
-            <span>{isBaking ? 'Saving...' : 'Apply to PDF'}</span>
+            <span>{isBaking ? 'Saving...' : 'Save to PDF'}</span>
           </button>
-
-          {onExportDocument && (
-            <button
-              onClick={async () => {
-                if (!isBaking && Object.values(annotations).some(a => a.length > 0)) {
-                  await handleSaveToPdf();
-                }
-                onExportDocument();
-              }}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition active:scale-95 shrink-0"
-              title="Save edited PDF to your phone's local storage / Downloads"
-            >
-              <Download className="w-4 h-4 text-emerald-100" />
-              <span>Export & Save</span>
-            </button>
-          )}
         </div>
       </div>
 
