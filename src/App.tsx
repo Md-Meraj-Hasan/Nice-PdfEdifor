@@ -156,56 +156,60 @@ export default function App() {
     skipHistoryPush = false,
     changedPageNumbers?: number[],
     updatedThumbnailsDirect?: PageThumbnail[]
-  ) => {
+  ): Promise<void> => {
+    const isQuickUpdate = !!updatedThumbnailsDirect || (changedPageNumbers && changedPageNumbers.length > 0);
     try {
-      const isQuickUpdate = !!updatedThumbnailsDirect || (changedPageNumbers && changedPageNumbers.length > 0);
       if (!isQuickUpdate) {
         setIsProcessing(true);
         setProcessStatus('Updating document & previews...');
       }
 
-      const pdfLibDoc = await PDFDocument.load(newBytes, { ignoreEncryption: true });
+      // Validate the exact output bytes before changing the active document.
+      const verifiedBytes = new Uint8Array(newBytes);
+      const pdfLibDoc = await PDFDocument.load(verifiedBytes, { ignoreEncryption: true });
       const pageCount = pdfLibDoc.getPageCount();
+      if (pageCount < 1) throw new Error('The resulting PDF has no pages.');
 
       let thumbnails: PageThumbnail[];
       if (updatedThumbnailsDirect) {
-        // Instant 0ms update: reorder, cut, copy, duplicate
         thumbnails = updatedThumbnailsDirect;
       } else if (changedPageNumbers && changedPageNumbers.length > 0 && document?.thumbnails) {
-        // Fast incremental ~50ms update: only re-render the modified page(s)
-        thumbnails = await updateSpecificThumbnails(document.thumbnails, newBytes, changedPageNumbers);
+        thumbnails = await updateSpecificThumbnails(document.thumbnails, verifiedBytes, changedPageNumbers);
       } else {
-        thumbnails = await generateAllThumbnails(newBytes, 260);
+        thumbnails = await generateAllThumbnails(verifiedBytes, 260);
       }
 
+      // Commit only after validation and preview generation both succeed.
       setDocument(prev => {
         if (!prev) return null;
         return {
           ...prev,
-          bytes: newBytes,
-          size: newBytes.byteLength,
+          bytes: verifiedBytes,
+          size: verifiedBytes.byteLength,
           pageCount,
           thumbnails,
         };
       });
 
       if (!skipHistoryPush) {
-        const nextHistory = history.slice(0, historyIndex + 1);
-        nextHistory.push(newBytes);
-        setHistory(nextHistory);
-        setHistoryIndex(nextHistory.length - 1);
+        setHistory(prev => {
+          const base = prev.slice(0, historyIndex + 1);
+          return [...base, verifiedBytes];
+        });
+        setHistoryIndex(prev => skipHistoryPush ? prev : prev + 1);
       }
 
       if (message) showToast(message);
     } catch (err) {
       console.error('Failed to update PDF document:', err);
-      alert('Failed to apply modification');
+      throw err instanceof Error ? err : new Error('Failed to apply PDF modification');
     } finally {
-      setIsProcessing(false);
-      setProcessStatus('');
+      if (!isQuickUpdate) {
+        setIsProcessing(false);
+        setProcessStatus('');
+      }
     }
   };
-
   /**
    * Undo last operation
    */
@@ -255,11 +259,22 @@ export default function App() {
   /**
    * Export / Download the active PDF file
    */
-  const handleDownloadCurrentPdf = () => {
+  const handleDownloadCurrentPdf = async () => {
     if (!document) return;
-    const blob = new Blob([document.bytes as unknown as BlobPart], { type: 'application/pdf' });
-    saveAs(blob, document.name.endsWith('.pdf') ? document.name : `${document.name}.pdf`);
-    showToast(`Downloaded ${document.name}`);
+    try {
+      // Export only a structurally valid snapshot of the latest committed bytes.
+      const exportBytes = new Uint8Array(document.bytes);
+      const verified = await PDFDocument.load(exportBytes, { ignoreEncryption: true });
+      if (verified.getPageCount() !== document.pageCount) {
+        throw new Error('PDF page count verification failed.');
+      }
+      const blob = new Blob([exportBytes], { type: 'application/pdf' });
+      saveAs(blob, document.name.toLowerCase().endsWith('.pdf') ? document.name : `${document.name}.pdf`);
+      showToast(`Exported ${document.name}`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      alert('PDF export failed. Your original document is still open; please try again.');
+    }
   };
 
   const handleNewFile = () => {
