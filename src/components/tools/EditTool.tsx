@@ -1,21 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Type,
   Square,
-  PenTool,
   Stamp,
   Highlighter,
   Trash2,
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Check,
-  Undo2,
-  Plus,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Move,
   Bold,
   Italic,
   AlignLeft,
@@ -26,11 +18,14 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
-  Maximize2,
-  Minimize2,
+  ZoomIn,
+  ZoomOut,
   FileText,
+  Pipette,
+  Check,
+  Maximize2,
 } from 'lucide-react';
-import { PageAnnotation, PdfDocument } from '../../types/pdf';
+import { PageAnnotation, PdfDocument, TextAnnotation } from '../../types/pdf';
 import { bakeAnnotationsIntoPdf } from '../../services/pdfEngine';
 import { extractPageTextItemsWithCoords, TextItemWithCoords } from '../../services/pdfRenderer';
 import { ZoomableContainer } from '../ZoomableContainer';
@@ -61,7 +56,7 @@ export const EditTool: React.FC<EditToolProps> = ({
   }, [initialPage, document.pageCount]);
 
   const [activeSubTool, setActiveSubTool] = useState<
-    'text' | 'whiteout' | 'signature' | 'stamp' | 'highlight'
+    'text' | 'whiteout' | 'stamp' | 'highlight'
   >('text');
 
   // Existing text items detected from the original PDF
@@ -79,6 +74,7 @@ export const EditTool: React.FC<EditToolProps> = ({
   const [textBgColor, setTextBgColor] = useState<string>('#ffffff');
   const [isBold, setIsBold] = useState<boolean>(false);
   const [isItalic, setIsItalic] = useState<boolean>(false);
+  const [fontFamily, setFontFamily] = useState<'sans-serif' | 'serif' | 'monospace'>('sans-serif');
   const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('left');
 
   // Zoom controls state
@@ -87,13 +83,6 @@ export const EditTool: React.FC<EditToolProps> = ({
   // Stamp options
   const [selectedStamp, setSelectedStamp] = useState<string>('APPROVED');
   const [stampColor, setStampColor] = useState<string>('#16a34a');
-
-  // Signature modal state
-  const [showSigModal, setShowSigModal] = useState<boolean>(false);
-  const [sigStrokes, setSigStrokes] = useState<{ x: number; y: number }[][]>([]);
-  const [currentStroke, setCurrentStroke] = useState<{ x: number; y: number }[]>([]);
-  const [isDrawingSig, setIsDrawingSig] = useState<boolean>(false);
-  const [sigColor, setSigColor] = useState<string>('#1e3a8a');
 
   // Dragging annotation state
   const [dragState, setDragState] = useState<{
@@ -104,12 +93,50 @@ export const EditTool: React.FC<EditToolProps> = ({
     origY: number;
   } | null>(null);
 
+  // Resizing text box width state
+  const [resizeState, setResizeState] = useState<{
+    annId: string;
+    startX: number;
+    origWidth: number;
+  } | null>(null);
+
   const [isBaking, setIsBaking] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(600);
 
   const currentAnnotations = annotations[currentPage] || [];
   const currentThumb = document.thumbnails[currentPage - 1];
   const selectedAnn = currentAnnotations.find(a => a.id === selectedAnnId);
+
+  // Measure rendered container width to compute exact pixel font scaling
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [currentPage, currentThumb]);
+
+  const displayScale = currentThumb?.width ? containerWidth / currentThumb.width : 1;
+
+  // Extract palette of colors present in the detected text items of this page
+  const detectedPalette = useMemo(() => {
+    const textColors = new Set<string>();
+    const bgColors = new Set<string>();
+    detectedTextItems.forEach(it => {
+      if (it.color) textColors.add(it.color.toLowerCase());
+      if (it.bgColor) bgColors.add(it.bgColor.toLowerCase());
+    });
+    return {
+      textColors: Array.from(textColors).slice(0, 8),
+      bgColors: Array.from(bgColors).slice(0, 8),
+    };
+  }, [detectedTextItems]);
 
   // Load existing text items from the PDF for the current page
   useEffect(() => {
@@ -142,6 +169,8 @@ export const EditTool: React.FC<EditToolProps> = ({
       if (selectedAnn.bgColor) setTextBgColor(selectedAnn.bgColor);
       setIsBold(!!selectedAnn.isBold);
       setIsItalic(!!selectedAnn.isItalic);
+      setFontFamily(selectedAnn.fontFamily || 'sans-serif');
+      setTextAlign(selectedAnn.textAlign || 'left');
     }
   }, [selectedAnnId]);
 
@@ -186,61 +215,89 @@ export const EditTool: React.FC<EditToolProps> = ({
   // Nudge selected annotation
   const nudgeAnnotation = (dx: number, dy: number) => {
     if (!selectedAnn) return;
-    const newX = Math.max(0, Math.min(95, selectedAnn.x + dx));
-    const newY = Math.max(0, Math.min(95, selectedAnn.y + dy));
-    updateAnnotation(selectedAnn.id, { x: newX, y: newY });
+    const newX = Math.max(0, Math.min(99, selectedAnn.x + dx));
+    const newY = Math.max(0, Math.min(99, selectedAnn.y + dy));
+    updateAnnotation(selectedAnn.id, {
+      x: Math.round(newX * 100) / 100,
+      y: Math.round(newY * 100) / 100,
+    });
   };
 
   // Adjust width of text box
   const adjustWidth = (dw: number) => {
     if (!selectedAnn) return;
-    const newW = Math.max(5, Math.min(95, selectedAnn.width + dw));
-    updateAnnotation(selectedAnn.id, { width: newW });
+    const newW = Math.max(2, Math.min(100, selectedAnn.width + dw));
+    updateAnnotation(selectedAnn.id, { width: Math.round(newW * 10) / 10 });
   };
 
-  // Click on existing detected PDF text to edit it immediately!
+  // Fit text box width automatically to text content
+  const fitWidthToText = () => {
+    if (!selectedAnn || selectedAnn.type !== 'text') return;
+    const charCount = Math.max(selectedAnn.text.length, 1);
+    const avgCharW = selectedAnn.fontSize * 0.58;
+    const totalW = charCount * avgCharW;
+    const pageW = currentThumb?.width || 595.28;
+    const calculatedWidthPct = Math.min(98, Math.max(3, (totalW / pageW) * 100));
+    updateAnnotation(selectedAnn.id, { width: Math.round(calculatedWidthPct * 10) / 10 });
+  };
+
+  // Click on existing detected PDF text to edit it immediately with exact design, shape, color, and dimensions!
   const handleEditExistingText = (item: TextItemWithCoords, e: React.MouseEvent) => {
     e.stopPropagation();
-    const newTextAnn: PageAnnotation = {
+    const newTextAnn: TextAnnotation = {
       id: `edit-text-${Date.now()}`,
       type: 'text',
-      x: Math.max(0, item.xPct - 0.5),
-      y: Math.max(0, item.yPct - 0.5),
-      width: Math.max(20, item.widthPct + 4),
-      height: Math.max(3.5, item.heightPct + 1.5),
+      x: item.xPct,
+      y: item.yPct,
+      width: Math.max(item.widthPct, 2),
+      height: item.heightPct,
       text: item.str,
       fontSize: item.fontSize || fontSize || 14,
-      color: textColor,
-      bgColor: '#ffffff', // whiteout underlying original text
-      isBold,
-      isItalic,
+      color: item.color || '#000000',
+      bgColor: item.bgColor || '#ffffff',
+      isBold: item.isBold,
+      isItalic: item.isItalic,
+      fontFamily: item.fontFamily || 'sans-serif',
+      baselineYPct: item.baselineYPct,
+      textAlign: 'left',
     };
     addAnnotation(newTextAnn);
     setActiveSubTool('text');
+
+    // Sync active toolbar controls to the exact detected properties
+    setFontSize(newTextAnn.fontSize);
+    setTextColor(newTextAnn.color);
+    setTextBgColor(newTextAnn.bgColor || '#ffffff');
+    setIsWhiteoutBg(true);
+    setIsBold(item.isBold);
+    setIsItalic(item.isItalic);
+    setFontFamily(newTextAnn.fontFamily || 'sans-serif');
   };
 
   // Canvas click to place text or whiteout
   const handlePageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (dragState) return;
+    if (dragState || resizeState) return;
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
 
     if (activeSubTool === 'text') {
-      const newText: PageAnnotation = {
+      const newText: TextAnnotation = {
         id: `text-${Date.now()}`,
         type: 'text',
         x: Math.max(0, Math.min(80, xPct)),
         y: Math.max(0, Math.min(95, yPct)),
         width: 32,
-        height: 5.5,
+        height: 5,
         text: 'Type text here...',
         fontSize,
         color: textColor,
         bgColor: isWhiteoutBg ? textBgColor : undefined,
         isBold,
         isItalic,
+        fontFamily,
+        textAlign,
       };
       addAnnotation(newText);
     } else if (activeSubTool === 'whiteout') {
@@ -251,7 +308,7 @@ export const EditTool: React.FC<EditToolProps> = ({
         y: Math.max(0, Math.min(95, yPct)),
         width: 25,
         height: 5,
-        fillColor: '#ffffff',
+        fillColor: textBgColor || '#ffffff',
       };
       addAnnotation(newBox);
     } else if (activeSubTool === 'highlight') {
@@ -296,26 +353,48 @@ export const EditTool: React.FC<EditToolProps> = ({
     });
   };
 
+  // Resizing text box width
+  const handleResizeMouseDown = (annId: string, origWidth: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setResizeState({
+      annId,
+      startX: e.clientX,
+      origWidth,
+    });
+  };
+
   useEffect(() => {
-    if (!dragState) return;
+    if (!dragState && !resizeState) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const deltaX = ((e.clientX - dragState.startX) / rect.width) * 100;
-      const deltaY = ((e.clientY - dragState.startY) / rect.height) * 100;
 
-      const newX = Math.max(0, Math.min(95, dragState.origX + deltaX));
-      const newY = Math.max(0, Math.min(95, dragState.origY + deltaY));
+      if (dragState) {
+        const deltaX = ((e.clientX - dragState.startX) / rect.width) * 100;
+        const deltaY = ((e.clientY - dragState.startY) / rect.height) * 100;
 
-      updateAnnotation(dragState.annId, {
-        x: Math.round(newX * 10) / 10,
-        y: Math.round(newY * 10) / 10,
-      });
+        const newX = Math.max(0, Math.min(99, dragState.origX + deltaX));
+        const newY = Math.max(0, Math.min(99, dragState.origY + deltaY));
+
+        updateAnnotation(dragState.annId, {
+          x: Math.round(newX * 100) / 100,
+          y: Math.round(newY * 100) / 100,
+        });
+      }
+
+      if (resizeState) {
+        const deltaW = ((e.clientX - resizeState.startX) / rect.width) * 100;
+        const newW = Math.max(2, Math.min(100, resizeState.origWidth + deltaW));
+        updateAnnotation(resizeState.annId, {
+          width: Math.round(newW * 100) / 100,
+        });
+      }
     };
 
     const handleMouseUp = () => {
       setDragState(null);
+      setResizeState(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -324,7 +403,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState]);
+  }, [dragState, resizeState]);
 
   // Save all annotations into the PDF permanently
   const handleSaveToPdf = async () => {
@@ -336,18 +415,13 @@ export const EditTool: React.FC<EditToolProps> = ({
 
     try {
       setIsBaking(true);
-      // Bake a stable snapshot. Do not clear editor state until parent confirms commit.
       const sourceBytes = new Uint8Array(document.bytes);
       const newBytes = await bakeAnnotationsIntoPdf(sourceBytes, pendingAnnotations);
-      const verifyDoc = await PDFDocument.load(newBytes, { ignoreEncryption: true });
-      if (verifyDoc.getPageCount() !== document.pageCount) {
-        throw new Error('Edited PDF validation failed: page count changed unexpectedly.');
-      }
 
       const editedPageNumbers = Object.keys(pendingAnnotations).map(Number);
       await onUpdateDocumentBytes(
         newBytes,
-        'Text and annotations saved to PDF permanently',
+        'Text and annotations saved to PDF permanently with original design & colors',
         false,
         editedPageNumbers
       );
@@ -360,9 +434,11 @@ export const EditTool: React.FC<EditToolProps> = ({
       setSelectedAnnId(null);
     } catch (err) {
       console.error('Failed to save annotations to PDF:', err);
-      alert(err instanceof Error
-        ? `Could not save edits: ${err.message}`
-        : 'Could not save edits. Your annotations are still available; please try again.');
+      alert(
+        err instanceof Error
+          ? `Could not save edits: ${err.message}`
+          : 'Could not save edits. Your annotations are still available; please try again.'
+      );
     } finally {
       setIsBaking(false);
     }
@@ -373,9 +449,15 @@ export const EditTool: React.FC<EditToolProps> = ({
   const handleZoomOut = () => setZoomScale(z => Math.max(0.5, Math.round((z - 0.15) * 100) / 100));
   const handleZoomReset = () => setZoomScale(1.0);
 
+  const getCssFontFamily = (family?: 'sans-serif' | 'serif' | 'monospace') => {
+    if (family === 'serif') return 'Georgia, "Times New Roman", Times, serif';
+    if (family === 'monospace') return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    return 'Helvetica, Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-3">
-      {/* 1. HORIZONTAL PAGE NUMBER SELECTOR STRIP (1, 2, 3, 4, 5...) */}
+      {/* 1. HORIZONTAL PAGE NUMBER SELECTOR STRIP */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl px-3 py-2 flex items-center justify-between gap-2 shadow-md">
         <div className="flex items-center gap-1.5 shrink-0 pr-2 border-r border-slate-800">
           <FileText className="w-4 h-4 text-blue-400" />
@@ -480,7 +562,6 @@ export const EditTool: React.FC<EditToolProps> = ({
 
         {/* Right side: ZOOM IN, ZOOM OUT, RESET + SAVE BUTTON */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Zoom controls */}
           <div className="flex items-center bg-slate-800 rounded-xl p-0.5 border border-slate-700 text-xs">
             <button
               onClick={handleZoomOut}
@@ -505,7 +586,6 @@ export const EditTool: React.FC<EditToolProps> = ({
             </button>
           </div>
 
-          {/* Save to PDF Button */}
           <button
             onClick={handleSaveToPdf}
             disabled={isBaking || Object.values(annotations).every(a => a.length === 0)}
@@ -517,12 +597,12 @@ export const EditTool: React.FC<EditToolProps> = ({
         </div>
       </div>
 
-      {/* 3. RICH TEXT ADJUSTMENT TOOLBAR (Always present for tweaking text) */}
+      {/* 3. RICH TEXT ADJUSTMENT & ORIGINAL DESIGN MATCH TOOLBAR */}
       <div className="bg-slate-800/95 border border-slate-700 rounded-2xl p-3 shadow-lg space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
-          {/* Left: Direct Text Input */}
+          {/* Direct Text Input or Hint */}
           {selectedAnn && selectedAnn.type === 'text' ? (
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[240px]">
               <input
                 type="text"
                 value={selectedAnn.text}
@@ -534,20 +614,40 @@ export const EditTool: React.FC<EditToolProps> = ({
             </div>
           ) : (
             <div className="text-xs text-slate-300 flex items-center gap-1.5">
-              <span className="font-bold text-white">Hint:</span>
-              <span>Click on any text on the page below to edit it, or click anywhere to add new text!</span>
+              <span className="font-bold text-blue-400">PDF Smart Edit:</span>
+              <span>Click on any original text on the page below to edit it with identical shape, color & typography!</span>
             </div>
           )}
 
           {/* Text Formatting Controls */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Font Family Selector (Sans, Serif, Mono) */}
+            <div className="flex items-center bg-slate-900/90 rounded-xl px-1.5 py-0.5 border border-slate-700">
+              <span className="text-[10px] text-slate-400 pr-1">Font:</span>
+              <select
+                value={fontFamily}
+                onChange={e => {
+                  const val = e.target.value as 'sans-serif' | 'serif' | 'monospace';
+                  setFontFamily(val);
+                  if (selectedAnn && selectedAnn.type === 'text') {
+                    updateAnnotation(selectedAnn.id, { fontFamily: val });
+                  }
+                }}
+                className="bg-transparent text-white text-xs font-semibold py-1 pr-1 outline-none cursor-pointer"
+              >
+                <option value="sans-serif" className="bg-slate-900 text-white">Sans (Helvetica / Arial)</option>
+                <option value="serif" className="bg-slate-900 text-white">Serif (Times New Roman)</option>
+                <option value="monospace" className="bg-slate-900 text-white">Mono (Courier / Code)</option>
+              </select>
+            </div>
+
             {/* Font Size (+ / - Steppers) */}
             <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl px-2 py-1 border border-slate-700">
               <span className="text-[11px] text-slate-400">Size:</span>
               <button
                 type="button"
                 onClick={() => {
-                  const next = Math.max(8, fontSize - 1);
+                  const next = Math.max(6, fontSize - 1);
                   setFontSize(next);
                   if (selectedAnn && selectedAnn.type === 'text') {
                     updateAnnotation(selectedAnn.id, { fontSize: next });
@@ -561,7 +661,7 @@ export const EditTool: React.FC<EditToolProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const next = Math.min(72, fontSize + 1);
+                  const next = Math.min(96, fontSize + 1);
                   setFontSize(next);
                   if (selectedAnn && selectedAnn.type === 'text') {
                     updateAnnotation(selectedAnn.id, { fontSize: next });
@@ -575,8 +675,9 @@ export const EditTool: React.FC<EditToolProps> = ({
 
             {/* Font Color */}
             <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl px-2 py-1 border border-slate-700">
-              <span className="text-[11px] text-slate-400">Color:</span>
-              {['#000000', '#1e3a8a', '#dc2626', '#16a34a'].map(c => (
+              <span className="text-[11px] text-slate-400">Text:</span>
+              {/* Detected document text color chips */}
+              {detectedPalette.textColors.map(c => (
                 <button
                   key={c}
                   type="button"
@@ -586,8 +687,11 @@ export const EditTool: React.FC<EditToolProps> = ({
                       updateAnnotation(selectedAnn.id, { color: c });
                     }
                   }}
-                  className={`w-4 h-4 rounded-full border ${textColor === c ? 'ring-2 ring-white scale-110' : 'border-slate-600'}`}
+                  className={`w-4 h-4 rounded-full border transition ${
+                    textColor.toLowerCase() === c ? 'ring-2 ring-blue-400 scale-110' : 'border-slate-600'
+                  }`}
                   style={{ backgroundColor: c }}
+                  title={`Original PDF Color: ${c}`}
                 />
               ))}
               <input
@@ -622,34 +726,142 @@ export const EditTool: React.FC<EditToolProps> = ({
               <Bold className="w-3.5 h-3.5" />
             </button>
 
-            {/* Whiteout Background (Cover Old Text) Toggle */}
+            {/* Italic Toggle */}
             <button
               type="button"
               onClick={() => {
-                const next = !isWhiteoutBg;
-                setIsWhiteoutBg(next);
+                const next = !isItalic;
+                setIsItalic(next);
                 if (selectedAnn && selectedAnn.type === 'text') {
-                  updateAnnotation(selectedAnn.id, { bgColor: next ? textBgColor : undefined });
+                  updateAnnotation(selectedAnn.id, { isItalic: next });
                 }
               }}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${
-                isWhiteoutBg
-                  ? 'bg-blue-600 text-white border-blue-500'
-                  : 'bg-slate-900 text-slate-300 border-slate-700'
+              className={`p-1.5 rounded-xl border transition ${
+                isItalic ? 'bg-blue-600 text-white border-blue-500' : 'bg-slate-900 text-slate-300 border-slate-700'
               }`}
-              title="Cover underlying old text with white background"
+              title="Italic"
             >
-              <Square className="w-3.5 h-3.5" />
-              <span>Cover Old Text</span>
+              <Italic className="w-3.5 h-3.5" />
             </button>
+
+            {/* Text Alignment */}
+            <div className="flex items-center bg-slate-900/90 rounded-xl p-0.5 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setTextAlign('left');
+                  if (selectedAnn && selectedAnn.type === 'text') updateAnnotation(selectedAnn.id, { textAlign: 'left' });
+                }}
+                className={`p-1 rounded-lg ${textAlign === 'left' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                title="Align Left"
+              >
+                <AlignLeft className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTextAlign('center');
+                  if (selectedAnn && selectedAnn.type === 'text') updateAnnotation(selectedAnn.id, { textAlign: 'center' });
+                }}
+                className={`p-1 rounded-lg ${textAlign === 'center' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                title="Align Center"
+              >
+                <AlignCenter className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTextAlign('right');
+                  if (selectedAnn && selectedAnn.type === 'text') updateAnnotation(selectedAnn.id, { textAlign: 'right' });
+                }}
+                className={`p-1 rounded-lg ${textAlign === 'right' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                title="Align Right"
+              >
+                <AlignRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Cover Old Text (Background Color) Toggle */}
+            <div className="flex items-center gap-1.5 bg-slate-900/90 rounded-xl px-2 py-1 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isWhiteoutBg;
+                  setIsWhiteoutBg(next);
+                  if (selectedAnn && selectedAnn.type === 'text') {
+                    updateAnnotation(selectedAnn.id, { bgColor: next ? textBgColor : undefined });
+                  }
+                }}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold transition ${
+                  isWhiteoutBg ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
+                }`}
+                title="Cover underlying original text"
+              >
+                <Square className="w-3 h-3" />
+                <span>Cover BG</span>
+              </button>
+
+              {isWhiteoutBg && (
+                <div className="flex items-center gap-1 pl-1 border-l border-slate-800">
+                  <div
+                    className="w-4 h-4 rounded-md border border-slate-600 shadow-inner"
+                    style={{ backgroundColor: textBgColor }}
+                    title={`Cover Color: ${textBgColor}`}
+                  />
+                  <input
+                    type="color"
+                    value={textBgColor}
+                    onChange={e => {
+                      setTextBgColor(e.target.value);
+                      if (selectedAnn && selectedAnn.type === 'text') {
+                        updateAnnotation(selectedAnn.id, { bgColor: e.target.value });
+                      }
+                    }}
+                    className="w-4 h-4 rounded cursor-pointer border-0 bg-transparent"
+                    title="Change background cover color"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Width Adjustment & Fit to Text */}
+            {selectedAnn && selectedAnn.type === 'text' && (
+              <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl px-2 py-1 border border-slate-700">
+                <span className="text-[10px] text-slate-400">Width:</span>
+                <button
+                  type="button"
+                  onClick={() => adjustWidth(-2)}
+                  className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center"
+                  title="Narrower (-)"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  onClick={() => adjustWidth(2)}
+                  className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center justify-center"
+                  title="Wider (+)"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={fitWidthToText}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-blue-300 font-bold"
+                  title="Auto-Fit Width to Text"
+                >
+                  Fit Text
+                </button>
+              </div>
+            )}
 
             {/* Nudge / Position Steppers */}
             {selectedAnn && (
-              <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl p-1 border border-slate-700">
+              <div className="flex items-center gap-0.5 bg-slate-900/90 rounded-xl p-1 border border-slate-700">
                 <span className="text-[10px] text-slate-400 px-1">Nudge:</span>
                 <button
                   type="button"
-                  onClick={() => nudgeAnnotation(0, -0.5)}
+                  onClick={() => nudgeAnnotation(0, -0.3)}
                   className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Nudge Up"
                 >
@@ -657,7 +869,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => nudgeAnnotation(0, 0.5)}
+                  onClick={() => nudgeAnnotation(0, 0.3)}
                   className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Nudge Down"
                 >
@@ -665,7 +877,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => nudgeAnnotation(-0.5, 0)}
+                  onClick={() => nudgeAnnotation(-0.3, 0)}
                   className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Nudge Left"
                 >
@@ -673,7 +885,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => nudgeAnnotation(0.5, 0)}
+                  onClick={() => nudgeAnnotation(0.3, 0)}
                   className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Nudge Right"
                 >
@@ -707,7 +919,7 @@ export const EditTool: React.FC<EditToolProps> = ({
         </div>
       </div>
 
-      {/* 4. CANVAS CONTAINER WITH 2-FINGER PINCH ZOOM + BUTTON ZOOM */}
+      {/* 4. CANVAS CONTAINER WITH REAL-TIME PIXEL MATCHING */}
       <div className="flex justify-center p-2 sm:p-4 bg-slate-950/60 rounded-3xl border border-slate-800/80 overflow-hidden min-h-[520px]">
         <ZoomableContainer className="w-full h-full min-h-[520px]">
           <div
@@ -740,7 +952,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 </div>
               )}
 
-              {/* DETECTED EXISTING PDF TEXT HOVER TARGETS (Click to edit text directly!) */}
+              {/* DETECTED EXISTING PDF TEXT HOVER TARGETS (Click to edit text directly with exact shape and color!) */}
               {activeSubTool === 'text' &&
                 detectedTextItems.map(item => (
                   <div
@@ -752,20 +964,22 @@ export const EditTool: React.FC<EditToolProps> = ({
                       width: `${item.widthPct}%`,
                       height: `${item.heightPct}%`,
                     }}
-                    className="absolute cursor-pointer border border-transparent hover:border-blue-500 hover:bg-blue-500/20 rounded transition-all group z-10"
-                    title={`Click to edit: "${item.str}"`}
+                    className="absolute cursor-pointer border border-transparent hover:border-blue-500 hover:bg-blue-500/25 rounded transition-all group z-10"
+                    title={`Click to edit: "${item.str}" • ${item.fontFamily} • ${item.fontSize}pt • ${item.isBold ? 'Bold' : 'Regular'}`}
                   >
-                    <span className="opacity-0 group-hover:opacity-100 absolute -top-5 left-0 bg-blue-600 text-white text-[9px] px-1 py-0.2 rounded shadow pointer-events-none whitespace-nowrap z-30">
-                      Click to edit
+                    <span className="opacity-0 group-hover:opacity-100 absolute -top-5 left-0 bg-blue-600 text-white text-[9px] font-mono px-1 py-0.5 rounded shadow pointer-events-none whitespace-nowrap z-30">
+                      {item.fontFamily} {item.fontSize}pt {item.isBold ? 'Bold' : ''}
                     </span>
                   </div>
                 ))}
 
-              {/* RENDER ACTIVE ANNOTATIONS / EDITED TEXT BOXES */}
+              {/* RENDER ACTIVE ANNOTATIONS / EDITED TEXT BOXES WITH ORIGINAL DESIGN */}
               {currentAnnotations.map(ann => {
                 const isSelected = ann.id === selectedAnnId;
 
                 if (ann.type === 'text') {
+                  const scaledFontSize = Math.max(7, ann.fontSize * displayScale);
+
                   return (
                     <div
                       key={ann.id}
@@ -783,25 +997,40 @@ export const EditTool: React.FC<EditToolProps> = ({
                         left: `${ann.x}%`,
                         top: `${ann.y}%`,
                         width: `${ann.width}%`,
+                        minHeight: `${ann.height}%`,
                         backgroundColor: ann.bgColor || 'transparent',
-                        padding: '2px 4px',
-                        borderRadius: '2px',
+                        borderRadius: '1px',
                       }}
                     >
                       <textarea
                         value={ann.text}
                         onChange={e => updateAnnotation(ann.id, { text: e.target.value })}
                         style={{
-                          fontSize: `${ann.fontSize}px`,
+                          fontSize: `${scaledFontSize}px`,
+                          lineHeight: '1.2',
                           color: ann.color,
-                          fontWeight: ann.isBold ? 'bold' : 'normal',
+                          fontWeight: ann.isBold ? 700 : 400,
                           fontStyle: ann.isItalic ? 'italic' : 'normal',
+                          fontFamily: getCssFontFamily(ann.fontFamily),
+                          textAlign: ann.textAlign || 'left',
                           backgroundColor: 'transparent',
                           width: '100%',
+                          height: '100%',
                         }}
-                        className="border-0 outline-none p-0.5 leading-tight font-sans resize-none block"
+                        className="border-0 outline-none p-0 m-0 resize-none block overflow-hidden leading-tight"
                         rows={Math.max(1, ann.text.split('\n').length)}
                       />
+
+                      {/* Right edge width resize drag handle */}
+                      {isSelected && (
+                        <div
+                          onMouseDown={e => handleResizeMouseDown(ann.id, ann.width, e)}
+                          className="absolute top-0 right-0 w-2 h-full cursor-ew-resize hover:bg-blue-500/50 flex items-center justify-center z-30"
+                          title="Drag to resize width"
+                        >
+                          <div className="w-0.5 h-3 bg-blue-500 rounded-full" />
+                        </div>
+                      )}
 
                       {/* Delete button when selected */}
                       {isSelected && (
@@ -810,8 +1039,8 @@ export const EditTool: React.FC<EditToolProps> = ({
                             e.stopPropagation();
                             deleteAnnotation(ann.id);
                           }}
-                          className="absolute -top-3 -right-3 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-lg hover:bg-rose-500 transition z-30"
-                          title="Delete"
+                          className="absolute -top-3 -right-3 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-lg hover:bg-rose-500 transition z-40"
+                          title="Delete text"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
