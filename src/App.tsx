@@ -281,23 +281,74 @@ export default function App() {
   }, [handleUndo, handleRedo]);
 
   /**
-   * Export / Download the active PDF file
+   * Save the latest PDF using the system Save As picker where supported.
+   * The browser picker lets the user choose both the filename and destination.
+   * Older browsers/WebViews fall back to the normal Downloads flow.
    */
   const handleDownloadCurrentPdf = async () => {
     if (!document) return;
+
+    const exportBytes = new Uint8Array(document.bytes);
+    const suggestedName = document.name.toLowerCase().endsWith('.pdf')
+      ? document.name
+      : `${document.name}.pdf`;
+
+    // Open the native/browser Save As dialog directly from the click handler,
+    // before awaiting PDF validation, so browsers retain the user gesture.
+    const pickerWindow = window as Window & {
+      showSaveFilePicker?: (options: {
+        suggestedName: string;
+        types: Array<{ description: string; accept: Record<string, string[]> }>;
+      }) => Promise<{
+        name: string;
+        createWritable: () => Promise<{
+          write: (data: Blob | Uint8Array) => Promise<void>;
+          close: () => Promise<void>;
+          abort?: () => Promise<void>;
+        }>;
+      }>;
+    };
+
+    let saveHandle: Awaited<ReturnType<NonNullable<typeof pickerWindow.showSaveFilePicker>>> | null = null;
     try {
-      // Export only a structurally valid snapshot of the latest committed bytes.
-      const exportBytes = new Uint8Array(document.bytes);
+      if (pickerWindow.showSaveFilePicker) {
+        saveHandle = await pickerWindow.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }],
+        });
+      }
+
+      // Never write/download a malformed or stale PDF snapshot.
       const verified = await PDFDocument.load(exportBytes, { ignoreEncryption: true });
       if (verified.getPageCount() !== document.pageCount) {
         throw new Error('PDF page count verification failed.');
       }
+
+      if (saveHandle) {
+        const writable = await saveHandle.createWritable();
+        try {
+          await writable.write(new Blob([exportBytes], { type: 'application/pdf' }));
+          await writable.close();
+        } catch (writeError) {
+          if (writable.abort) await writable.abort().catch(() => undefined);
+          throw writeError;
+        }
+        showToast(`Saved successfully: ${saveHandle.name}`);
+        return;
+      }
+
+      // Fallback for browsers/WebViews without the File System Access API.
+      // The browser/Android download manager decides the destination.
       const blob = new Blob([exportBytes], { type: 'application/pdf' });
-      saveAs(blob, document.name.toLowerCase().endsWith('.pdf') ? document.name : `${document.name}.pdf`);
-      showToast(`Exported ${document.name}`);
-    } catch (err) {
-      console.error('PDF export failed:', err);
-      alert('PDF export failed. Your original document is still open; please try again.');
+      saveAs(blob, suggestedName);
+      showToast(`Download started: ${suggestedName}. Check your Downloads folder or browser download prompt.`);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        showToast('Save cancelled. Your PDF is still open and unchanged.');
+        return;
+      }
+      console.error('PDF save failed:', err);
+      alert('PDF could not be saved. Your edited document is still open and unchanged. Please try Save As again.');
     }
   };
 
