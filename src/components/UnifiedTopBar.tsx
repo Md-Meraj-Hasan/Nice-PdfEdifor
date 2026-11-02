@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText,
   Download,
-  Smartphone,
   ShieldCheck,
   Plus,
   Undo2,
@@ -388,7 +387,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
           </div>
         )}
 
-        {/* RIGHT CONTROLS: Undo/Redo, APK, Export, Open */}
+        {/* RIGHT CONTROLS: Undo/Redo, Save As, Open */}
         <div className="flex items-center gap-1.5 shrink-0 pl-1 border-l border-slate-800/80">
           {/* Undo / Redo */}
           {fileName && (
@@ -411,16 +410,6 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
               </button>
             </div>
           )}
-
-          {/* GitHub APK Builder Button */}
-          <button
-            onClick={() => setActiveTool('apk-builder')}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm transition active:scale-95 shrink-0"
-            title="Build Android APK with GitHub Actions"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-200" />
-            <span className="hidden sm:inline">Build APK</span>
-          </button>
 
           {/* Save & Download current PDF */}
           {fileName && (
