@@ -10,7 +10,6 @@ import {
   Crop,
   RotateCw,
   Maximize2,
-  Smartphone,
   X,
   ShieldCheck,
 } from 'lucide-react';
@@ -83,12 +82,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       label: 'Size & Dimensions',
       desc: 'A4, Letter, Legal, Custom resizing',
       icon: <Maximize2 className="w-5 h-5 text-indigo-400" />,
-    },
-    {
-      id: 'apk-builder',
-      label: 'Build Android APK',
-      desc: 'Download project ZIP & build APK on GitHub',
-      icon: <Smartphone className="w-5 h-5 text-emerald-400" />,
     },
   ];
 
