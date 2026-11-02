@@ -35,6 +35,7 @@ jobs:
 
       - name: Setup Capacitor Android
         run: |
+          - name: Install Rolldown Linux binding
           npm install --save @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
           npx cap add android || true
           npx cap sync android
