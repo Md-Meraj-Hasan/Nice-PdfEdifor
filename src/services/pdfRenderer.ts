@@ -49,7 +49,7 @@ export async function renderPageToCanvas(
   }).promise;
 
   return {
-    dataUrl: canvas.toDataURL('image/jpeg', 0.85),
+    dataUrl: canvas.toDataURL('image/png'),
     width: viewport.width,
     height: viewport.height,
     canvas,
@@ -61,7 +61,7 @@ export async function renderPageToCanvas(
  */
 export async function generateAllThumbnails(
   bytes: Uint8Array,
-  targetWidth = 260,
+  targetWidth = 1600,
   onProgress?: (current: number, total: number) => void
 ): Promise<PageThumbnail[]> {
   try {
@@ -86,7 +86,7 @@ export async function generateAllThumbnails(
         await page.render({ canvasContext: ctx, viewport, canvas }).promise;
         thumbnails.push({
           pageNumber: i,
-          dataUrl: canvas.toDataURL('image/jpeg', 0.8),
+          dataUrl: canvas.toDataURL('image/png'),
           width: initialViewport.width,
           height: initialViewport.height,
           aspectRatio: initialViewport.width / initialViewport.height,
@@ -182,7 +182,7 @@ export async function updateSpecificThumbnails(
       if (pageNum < 1 || pageNum > totalPages) continue;
       const page = await pdfJsDoc.getPage(pageNum);
       const initialViewport = page.getViewport({ scale: 1.0 });
-      const scale = 260 / initialViewport.width;
+      const scale = 1600 / initialViewport.width;
       const viewport = page.getViewport({ scale });
 
       const canvas = document.createElement('canvas');
