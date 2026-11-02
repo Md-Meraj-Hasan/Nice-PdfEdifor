@@ -85,7 +85,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
       className="sticky top-0 z-50 bg-slate-900/98 backdrop-blur-xl border-b border-slate-800 px-2 sm:px-4 py-2 shadow-lg"
     >
       {/* SINGLE HORIZONTAL LINE CONTAINER */}
-      <div className="flex items-center justify-between gap-2 max-w-[100vw] overflow-x-auto no-scrollbar">
+      <div className="flex items-center justify-between gap-2 max-w-[100vw] overflow-x-hidden">
         {/* Brand & Home (Compact) */}
         <div className="flex items-center gap-2 shrink-0 pr-1 border-r border-slate-800/80">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
@@ -110,7 +110,7 @@ export const UnifiedTopBar: React.FC<UnifiedTopBarProps> = ({
 
         {/* HORIZONTAL DROPDOWN MENUS FOR EVERY SECTION - ONLY VISIBLE WHEN PDF IS LOADED */}
         {fileName ? (
-          <nav className="flex items-center gap-1 shrink-0 overflow-x-auto no-scrollbar">
+          <nav className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar whitespace-nowrap scroll-smooth">
           {/* SECTION 1: Pages ▾ */}
           <div className="relative">
             <button
