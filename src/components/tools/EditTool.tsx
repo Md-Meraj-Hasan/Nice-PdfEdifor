@@ -211,7 +211,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       text: item.str,
       fontSize: item.fontSize || fontSize || 14,
       color: textColor,
-      bgColor: '#ffffff', // whiteout underlying original text
+      bgColor: isWhiteoutBg ? textBgColor : undefined, // honor Cover Old Text toggle
       isBold,
       isItalic,
     };
