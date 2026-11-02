@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 import { UnifiedTopBar } from './components/UnifiedTopBar';
@@ -36,6 +36,9 @@ export default function App() {
   // Undo / Redo history stack
   const [history, setHistory] = useState<Uint8Array[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const historyRef = useRef<Uint8Array[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const historyBusyRef = useRef<boolean>(false);
 
   // Protected PDF unlock modal state
   const [pendingProtectedFile, setPendingProtectedFile] = useState<{
@@ -98,7 +101,9 @@ export default function App() {
       setTargetPageForTool(1);
 
       // Initialize undo/redo history
-      setHistory([bytes]);
+      historyRef.current = [new Uint8Array(bytes)];
+      historyIndexRef.current = 0;
+      setHistory(historyRef.current);
       setHistoryIndex(0);
 
       showToast(`Loaded ${fileName} (${pageCount} pages)`);
@@ -192,11 +197,13 @@ export default function App() {
       });
 
       if (!skipHistoryPush) {
-        setHistory(prev => {
-          const base = prev.slice(0, historyIndex + 1);
-          return [...base, verifiedBytes];
-        });
-        setHistoryIndex(prev => skipHistoryPush ? prev : prev + 1);
+        // Update refs synchronously so rapid consecutive operations never use stale React state.
+        const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+        nextHistory.push(new Uint8Array(verifiedBytes));
+        historyRef.current = nextHistory;
+        historyIndexRef.current = nextHistory.length - 1;
+        setHistory(nextHistory);
+        setHistoryIndex(nextHistory.length - 1);
       }
 
       if (message) showToast(message);
@@ -214,25 +221,42 @@ export default function App() {
    * Undo last operation
    */
   const handleUndo = useCallback(async () => {
-    if (historyIndex > 0) {
-      const prevIdx = historyIndex - 1;
-      const prevBytes = history[prevIdx];
-      setHistoryIndex(prevIdx);
-      await handleUpdateDocumentBytes(prevBytes, 'Undo applied', true);
+    if (historyBusyRef.current || historyIndexRef.current <= 0) return;
+    historyBusyRef.current = true;
+    const previousIndex = historyIndexRef.current;
+    const targetIndex = previousIndex - 1;
+    try {
+      const targetBytes = historyRef.current[targetIndex];
+      await handleUpdateDocumentBytes(targetBytes, 'Undo applied', true);
+      historyIndexRef.current = targetIndex;
+      setHistoryIndex(targetIndex);
+    } catch (err) {
+      console.error('Undo failed:', err);
+      alert('Undo could not be completed. The current PDF has been kept unchanged.');
+    } finally {
+      historyBusyRef.current = false;
     }
-  }, [history, historyIndex]);
+  }, [handleUpdateDocumentBytes]);
 
   /**
    * Redo last operation
    */
   const handleRedo = useCallback(async () => {
-    if (historyIndex < history.length - 1) {
-      const nextIdx = historyIndex + 1;
-      const nextBytes = history[nextIdx];
-      setHistoryIndex(nextIdx);
-      await handleUpdateDocumentBytes(nextBytes, 'Redo applied', true);
+    if (historyBusyRef.current || historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyBusyRef.current = true;
+    const targetIndex = historyIndexRef.current + 1;
+    try {
+      const targetBytes = historyRef.current[targetIndex];
+      await handleUpdateDocumentBytes(targetBytes, 'Redo applied', true);
+      historyIndexRef.current = targetIndex;
+      setHistoryIndex(targetIndex);
+    } catch (err) {
+      console.error('Redo failed:', err);
+      alert('Redo could not be completed. The current PDF has been kept unchanged.');
+    } finally {
+      historyBusyRef.current = false;
     }
-  }, [history, historyIndex]);
+  }, [handleUpdateDocumentBytes]);
 
   // Global Keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y or Ctrl+Shift+Z)
   useEffect(() => {
@@ -281,6 +305,8 @@ export default function App() {
     if (confirm('Do you want to close the current PDF and open a new one?')) {
       setDocument(null);
       setClipboard(null);
+      historyRef.current = [];
+      historyIndexRef.current = -1;
       setHistory([]);
       setHistoryIndex(-1);
     }
