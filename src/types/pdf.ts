@@ -7,8 +7,7 @@ export type ToolId =
   | 'resize'
   | 'edit'
   | 'ocr'
-  | 'security'
-  | 'apk-builder';
+  | 'security';
 
 export interface PageThumbnail {
   pageNumber: number;
